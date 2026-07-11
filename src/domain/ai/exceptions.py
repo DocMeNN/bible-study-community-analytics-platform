@@ -29,6 +29,11 @@ class AIError(Exception):
     """
 
 
+# ============================================================================
+# AI Exceptions
+# ============================================================================
+
+
 class AIConfigurationError(AIError):
     """
     Raised when AI configuration is invalid or incomplete.
@@ -69,4 +74,34 @@ class AIResponseError(AIError):
 class AIProviderError(AIError):
     """
     Raised when an AI provider encounters an internal error.
+    """
+
+
+# ============================================================================
+# Prompt Exceptions
+# ============================================================================
+
+
+class PromptError(AIError):
+    """
+    Base exception for all prompt-related errors.
+    """
+
+
+class PromptNotFoundError(PromptError):
+    """
+    Raised when a requested prompt template
+    is not registered.
+    """
+
+
+class PromptValidationError(PromptError):
+    """
+    Raised when prompt variables fail validation.
+    """
+
+
+class PromptRenderError(PromptError):
+    """
+    Raised when prompt rendering fails.
     """

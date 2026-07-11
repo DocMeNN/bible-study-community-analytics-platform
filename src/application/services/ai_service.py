@@ -12,12 +12,15 @@ Architecture:
 Dependencies:
     Domain layer
     Configuration layer
+    Prompt Engine
+    Response Engine
+    AI Request Builder
     Infrastructure factory
 
 Notes:
-    This service is provider-agnostic. It renders prompts,
-    builds AI requests, and delegates generation to the
-    configured AI provider.
+    This service is provider-agnostic. It delegates prompt
+    rendering, request construction, response processing,
+    and provider interaction to dedicated components.
 
 Author: Me
 """
@@ -25,16 +28,23 @@ Author: Me
 from __future__ import annotations
 
 # Local application imports
+from src.application.ai.prompt_engine import PromptEngine
+from src.application.ai.prompt_registry import PromptRegistry
+from src.application.ai.prompt_renderer import PromptRenderer
+from src.application.ai.request_builder import AIRequestBuilder
+from src.application.ai.response_engine import ResponseEngine
+from src.application.ai.response_parser import ResponseParser
+from src.application.ai.response_validator import ResponseValidator
 from src.config.ai_config import AIConfig
 from src.domain.ai.interfaces import AIProvider
-from src.domain.ai.models import AIRequest, AIResponse
-from src.domain.ai.prompts import PromptTemplate, render_prompt
+from src.domain.ai.models import AIResponse
+from src.domain.ai.prompts import PromptTemplate
 from src.infrastructure.ai.provider_factory import AIProviderFactory
 
 
 class AIService:
     """
-    Coordinates AI operations for the application.
+    Coordinates AI operations.
     """
 
     def __init__(
@@ -44,19 +54,23 @@ class AIService:
     ) -> None:
         """
         Initialize the AI service.
-
-        Parameters
-        ----------
-        config:
-            AI configuration.
-
-        provider:
-            Optional provider implementation.
-            Primarily used for dependency injection during testing.
         """
 
-        self._config = config
         self._provider = provider or AIProviderFactory.create(config)
+
+        self._prompt_engine = PromptEngine(
+            registry=PromptRegistry(),
+            renderer=PromptRenderer(),
+        )
+
+        self._request_builder = AIRequestBuilder(
+            config=config,
+        )
+
+        self._response_engine = ResponseEngine(
+            parser=ResponseParser(),
+            validator=ResponseValidator(),
+        )
 
     def generate(
         self,
@@ -64,31 +78,46 @@ class AIService:
         **prompt_data: object,
     ) -> AIResponse:
         """
-        Generate AI output using a prompt template.
-
-        Parameters
-        ----------
-        template:
-            Prompt template identifier.
-
-        **prompt_data:
-            Values used to render the prompt template.
+        Generate an AI response.
 
         Returns
         -------
         AIResponse
-            Structured AI response.
+            Provider response including metadata.
         """
 
-        prompt = render_prompt(
-            template,
+        prompt = self._prompt_engine.render(
+            prompt=template,
+            variables=prompt_data,
+        )
+
+        request = self._request_builder.build(
+            prompt=prompt,
+        )
+
+        return self._provider.generate(
+            request,
+        )
+
+    def process(
+        self,
+        template: PromptTemplate,
+        **prompt_data: object,
+    ) -> str:
+        """
+        Generate, parse, and validate AI output.
+
+        Returns
+        -------
+        str
+            Parsed and validated response text.
+        """
+
+        response = self.generate(
+            template=template,
             **prompt_data,
         )
 
-        request = AIRequest(
-            prompt=prompt,
-            temperature=self._config.temperature,
-            max_tokens=self._config.max_tokens,
+        return self._response_engine.process(
+            response=response,
         )
-
-        return self._provider.generate(request)

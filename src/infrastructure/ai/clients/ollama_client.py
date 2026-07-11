@@ -46,9 +46,7 @@ class OllamaClient:
         """
         Initialize the client.
         """
-        self._base_url = (
-            config.base_url or "http://localhost:11434"
-        ).rstrip("/")
+        self._base_url = (config.base_url or "http://localhost:11434").rstrip("/")
 
         self._timeout = config.timeout
 
@@ -103,9 +101,7 @@ class OllamaClient:
             )
 
         except requests.ConnectionError as exc:
-            raise AIConnectionError(
-                "Unable to connect to the Ollama server."
-            ) from exc
+            raise AIConnectionError("Unable to connect to the Ollama server.") from exc
 
         except requests.Timeout as exc:
             raise AIConnectionError(
@@ -113,14 +109,10 @@ class OllamaClient:
             ) from exc
 
         if response.status_code == 401:
-            raise AIAuthenticationError(
-                "Ollama authentication failed."
-            )
+            raise AIAuthenticationError("Ollama authentication failed.")
 
         if not response.ok:
-            raise AIProviderError(
-                f"Ollama returned HTTP {response.status_code}."
-            )
+            raise AIProviderError(f"Ollama returned HTTP {response.status_code}.")
 
         return cast(
             dict[str, Any],

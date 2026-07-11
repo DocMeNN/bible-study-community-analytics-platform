@@ -36,7 +36,6 @@ from .providers.gemini_provider import GeminiProvider
 from .providers.ollama_provider import OllamaProvider
 from .providers.openai_provider import OpenAIProvider
 
-
 _PROVIDER_REGISTRY: dict[
     AIProvider,
     Callable[[AIConfig], AIProviderInterface],
@@ -75,13 +74,9 @@ class AIProviderFactory:
             If the configured provider is unsupported.
         """
 
-        provider_factory = _PROVIDER_REGISTRY.get(
-            config.provider
-        )
+        provider_factory = _PROVIDER_REGISTRY.get(config.provider)
 
         if provider_factory is None:
-            raise AIConfigurationError(
-                f"Unsupported AI provider: {config.provider}"
-            )
+            raise AIConfigurationError(f"Unsupported AI provider: {config.provider}")
 
         return provider_factory(config)
