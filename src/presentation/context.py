@@ -12,6 +12,8 @@ Responsibilities
 - Manage Streamlit session state.
 - Store the active Session aggregate.
 - Provide access to application services.
+- Provide access to presentation controllers.
+- Provide access to presentation view models.
 - Store presentation configuration values.
 - Act as the bridge between the UI and the Application layer.
 
@@ -20,7 +22,7 @@ Architectural Rules
 - No business logic.
 - No analytics.
 - No parsing.
-- No Infrastructure access.
+- No Infrastructure access outside object composition.
 - No Domain calculations.
 """
 
@@ -40,11 +42,15 @@ import streamlit as st
 # Local Imports
 # ============================================================================
 from src.application.services.activity_service import ActivityService
+from src.application.services.ai_service import AIService
 from src.application.services.attendance_service import AttendanceService
 from src.application.services.dashboard_service import DashboardService
 from src.application.services.import_service import ImportService
 from src.application.services.report_service import ReportService
+from src.config.ai_config import load_ai_config
 from src.domain.models.session import Session
+from src.presentation.controllers.ai_controller import AIController
+from src.presentation.viewmodels.ai_viewmodel import AIViewModel
 
 # ============================================================================
 # Session State Keys
@@ -58,6 +64,10 @@ _ACTIVITY_SERVICE_KEY: Final = "activity_service"
 _DASHBOARD_SERVICE_KEY: Final = "dashboard_service"
 _REPORT_SERVICE_KEY: Final = "report_service"
 _IMPORT_SERVICE_KEY: Final = "import_service"
+
+_AI_SERVICE_KEY: Final = "ai_service"
+_AI_CONTROLLER_KEY: Final = "ai_controller"
+_AI_VIEWMODEL_KEY: Final = "ai_viewmodel"
 
 # ============================================================================
 # Initialization
@@ -73,9 +83,15 @@ def initialize() -> None:
 
     state = st.session_state
 
-    state.setdefault(_SESSION_KEY, None)
+    state.setdefault(
+        _SESSION_KEY,
+        None,
+    )
 
-    state.setdefault(_EXPECTED_ATTENDEES_KEY, 0)
+    state.setdefault(
+        _EXPECTED_ATTENDEES_KEY,
+        0,
+    )
 
     state.setdefault(
         _ATTENDANCE_SERVICE_KEY,
@@ -129,6 +145,33 @@ def initialize() -> None:
         ),
     )
 
+    state.setdefault(
+        _AI_SERVICE_KEY,
+        AIService(
+            config=load_ai_config(),
+        ),
+    )
+
+    state.setdefault(
+        _AI_CONTROLLER_KEY,
+        AIController(
+            ai_service=cast(
+                AIService,
+                state[_AI_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _AI_VIEWMODEL_KEY,
+        AIViewModel(
+            controller=cast(
+                AIController,
+                state[_AI_CONTROLLER_KEY],
+            ),
+        ),
+    )
+
 
 # ============================================================================
 # Session
@@ -136,13 +179,17 @@ def initialize() -> None:
 
 
 def set_session(session: Session) -> None:
-    """Store the active Session."""
+    """
+    Store the active Session.
+    """
 
     st.session_state[_SESSION_KEY] = session
 
 
 def current_session() -> Session | None:
-    """Return the active Session."""
+    """
+    Return the active Session.
+    """
 
     return cast(
         Session | None,
@@ -151,30 +198,33 @@ def current_session() -> Session | None:
 
 
 def has_session() -> bool:
-    """Return True when a Session is loaded."""
+    """
+    Return True when a Session is loaded.
+    """
 
     return current_session() is not None
 
 
 def clear_session() -> None:
-    """Remove the active Session."""
+    """
+    Remove the active Session.
+    """
 
     st.session_state[_SESSION_KEY] = None
 
 
-# ============================================================================
-# Expected Attendees
-# ============================================================================
-
-
 def set_expected_attendees(value: int) -> None:
-    """Store the expected attendee count."""
+    """
+    Store the expected attendee count.
+    """
 
     st.session_state[_EXPECTED_ATTENDEES_KEY] = value
 
 
 def expected_attendees() -> int:
-    """Return the configured expected attendee count."""
+    """
+    Return the configured expected attendee count.
+    """
 
     return cast(
         int,
@@ -188,7 +238,9 @@ def expected_attendees() -> int:
 
 
 def attendance_service() -> AttendanceService:
-    """Return the AttendanceService."""
+    """
+    Return the AttendanceService.
+    """
 
     return cast(
         AttendanceService,
@@ -197,7 +249,9 @@ def attendance_service() -> AttendanceService:
 
 
 def activity_service() -> ActivityService:
-    """Return the ActivityService."""
+    """
+    Return the ActivityService.
+    """
 
     return cast(
         ActivityService,
@@ -206,7 +260,9 @@ def activity_service() -> ActivityService:
 
 
 def dashboard_service() -> DashboardService:
-    """Return the DashboardService."""
+    """
+    Return the DashboardService.
+    """
 
     return cast(
         DashboardService,
@@ -215,7 +271,9 @@ def dashboard_service() -> DashboardService:
 
 
 def report_service() -> ReportService:
-    """Return the ReportService."""
+    """
+    Return the ReportService.
+    """
 
     return cast(
         ReportService,
@@ -231,6 +289,49 @@ def import_service() -> ImportService:
     return cast(
         ImportService,
         st.session_state[_IMPORT_SERVICE_KEY],
+    )
+
+
+def ai_service() -> AIService:
+    """
+    Return the shared AIService.
+    """
+
+    return cast(
+        AIService,
+        st.session_state[_AI_SERVICE_KEY],
+    )
+
+
+# ============================================================================
+# Controllers
+# ============================================================================
+
+
+def ai_controller() -> AIController:
+    """
+    Return the AIController.
+    """
+
+    return cast(
+        AIController,
+        st.session_state[_AI_CONTROLLER_KEY],
+    )
+
+
+# ============================================================================
+# View Models
+# ============================================================================
+
+
+def ai_viewmodel() -> AIViewModel:
+    """
+    Return the shared AIViewModel.
+    """
+
+    return cast(
+        AIViewModel,
+        st.session_state[_AI_VIEWMODEL_KEY],
     )
 
 
@@ -251,4 +352,7 @@ __all__ = [
     "dashboard_service",
     "report_service",
     "import_service",
+    "ai_service",
+    "ai_controller",
+    "ai_viewmodel",
 ]
