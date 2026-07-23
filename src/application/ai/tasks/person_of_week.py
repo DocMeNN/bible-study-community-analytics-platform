@@ -1,11 +1,10 @@
-# src/application/ai/tasks/person_of_week.py
+# src/application/ai/tasks/person_of_the_week.py
 
 """
 Person of the Week AI Task
 
 Purpose:
-    Generates AI-powered recognition summaries for outstanding
-    contributors.
+    Generates AI-powered recognition of outstanding contributors.
 
 Architecture:
     Application Layer - AI Tasks
@@ -15,16 +14,12 @@ Dependencies:
     Domain AI Prompt Templates
 
 Notes:
-    This task explains contributor metrics.
+    This task coordinates the person-of-the-week workflow.
 
     It does not:
-        - calculate rankings,
-        - determine winners,
         - communicate with AI providers,
         - render prompts directly,
         - parse responses.
-
-    Ranking logic remains within the analytics/domain layer.
 
 Author: Me
 """
@@ -36,9 +31,9 @@ from src.application.services.ai_service import AIService
 from src.domain.ai.prompts import PromptTemplate
 
 
-class PersonOfWeekTask:
+class PersonOfTheWeekTask:
     """
-    AI task for generating contributor recognition summaries.
+    AI task for identifying outstanding contributors.
     """
 
     def __init__(
@@ -46,7 +41,7 @@ class PersonOfWeekTask:
         ai_service: AIService,
     ) -> None:
         """
-        Initialize the person of the week task.
+        Initialize the person-of-the-week task.
 
         Parameters
         ----------
@@ -62,17 +57,17 @@ class PersonOfWeekTask:
         metrics: str,
     ) -> str:
         """
-        Generate a person of the week explanation.
+        Identify outstanding contributors from participation metrics.
 
         Parameters
         ----------
         metrics:
-            Contributor performance metrics.
+            Participation metrics to analyze.
 
         Returns
         -------
         str
-            AI-generated recognition summary.
+            AI-generated contributor recognition.
         """
 
         return self._ai_service.process(

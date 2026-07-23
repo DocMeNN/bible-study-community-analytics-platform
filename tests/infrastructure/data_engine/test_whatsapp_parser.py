@@ -1,6 +1,5 @@
 # tests/infrastructure/data_engine/test_whatsapp_parser.py
 
-from datetime import datetime
 
 from src.infrastructure.data_engine.whatsapp_parser import (
     parse_whatsapp_chat,

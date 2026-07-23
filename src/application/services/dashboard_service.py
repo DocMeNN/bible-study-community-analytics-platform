@@ -24,7 +24,7 @@ Rules:
 Notes:
     - Delegates business calculations to Domain services.
     - Delegates Session construction to AttendanceService.
-    - Acts as the primary service consumed by Presentation layer.
+    - Acts as the primary service consumed by the Presentation layer.
 
 Author:
     OYBS Attendance Dashboard
@@ -53,6 +53,9 @@ from src.domain.models.session import Session
 class DashboardService:
     """
     Application service for dashboard workflows.
+
+    Coordinates application services required to assemble
+    dashboard-ready session information.
     """
 
     def __init__(
@@ -71,7 +74,9 @@ class DashboardService:
         )
 
         self._activity_service = (
-            activity_service if activity_service is not None else ActivityService()
+            activity_service
+            if activity_service is not None
+            else ActivityService()
         )
 
     # ------------------------------------------------------------------
@@ -84,7 +89,7 @@ class DashboardService:
         messages: Iterable[Message],
     ) -> Session:
         """
-        Build Session aggregate.
+        Build a Session aggregate.
         """
 
         return self._attendance_service.build_session(
@@ -102,12 +107,11 @@ class DashboardService:
         expected_attendees: int,
     ) -> dict[str, object]:
         """
-        Return dashboard metrics.
+        Return dashboard-ready metrics.
         """
 
         return {
             "session_date": session.session_date,
-            # Keys expected by presentation.formatters
             "attendance_count": session.attendee_count,
             "attendance_rate": self._attendance_service.attendance_rate(
                 session,
@@ -115,7 +119,6 @@ class DashboardService:
             ),
             "done_count": session.done_count,
             "activity_count": session.activity_count,
-            # Additional dashboard information
             "attendance_events": session.attendance_count,
             "participants": session.attendee_count,
             "first_done": session.first_done,
@@ -175,8 +178,12 @@ class DashboardService:
             "activity_types": self._activity_service.activity_counts(
                 session,
             ),
-            "first_activity": session.first_activity,
-            "last_activity": session.last_activity,
+            "first_activity": self._activity_service.first_activity(
+                session,
+            ),
+            "last_activity": self._activity_service.last_activity(
+                session,
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -232,7 +239,7 @@ class DashboardService:
         session: Session,
     ) -> bool:
         """
-        Return True if session has no events.
+        Return True if the session has no events.
         """
 
         return session.is_empty
@@ -244,7 +251,7 @@ class DashboardService:
     @property
     def attendance_service(self) -> AttendanceService:
         """
-        Return AttendanceService.
+        Return the AttendanceService.
         """
 
         return self._attendance_service
@@ -252,7 +259,7 @@ class DashboardService:
     @property
     def activity_service(self) -> ActivityService:
         """
-        Return ActivityService.
+        Return the ActivityService.
         """
 
         return self._activity_service
@@ -263,7 +270,7 @@ class DashboardService:
 
     def __repr__(self) -> str:
         """
-        Return official representation.
+        Return the official representation.
         """
 
         return (
@@ -276,7 +283,7 @@ class DashboardService:
 
     def __str__(self) -> str:
         """
-        Return readable representation.
+        Return a readable representation.
         """
 
         return self.__repr__()

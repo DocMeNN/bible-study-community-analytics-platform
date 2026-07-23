@@ -57,7 +57,7 @@ class ScriptureSummaryTask:
         scripture: str,
     ) -> str:
         """
-        Generate a scripture summary.
+        Generate a summary of a scripture passage.
 
         Parameters
         ----------

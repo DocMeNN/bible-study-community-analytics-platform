@@ -5,7 +5,7 @@ Activity Application Service
 
 Purpose:
     Provides application-level activity use cases by orchestrating
-    the SessionBuilder and Domain activity analytics.
+    Session construction and Domain activity analytics.
 
 Responsibilities:
     - Build Session aggregates.
@@ -24,6 +24,7 @@ Rules:
 Notes:
     - Business rules remain inside the Domain layer.
     - This service coordinates Domain components only.
+    - Activity calculations are delegated to Domain analytics.
     - Technology independent.
 
 Author:
@@ -62,8 +63,9 @@ class ActivityService:
     """
     Application service for activity workflows.
 
-    The service coordinates Session construction and
-    delegates business calculations to the Domain layer.
+    Coordinates Session construction and delegates
+    activity-related business calculations to the
+    Domain layer.
     """
 
     def __init__(
@@ -71,16 +73,24 @@ class ActivityService:
         session_builder: SessionBuilder | None = None,
     ) -> None:
         """
-        Initialize the service.
+        Initialize the ActivityService.
+
+        Parameters
+        ----------
+        session_builder:
+            Optional SessionBuilder used to construct Session aggregates.
+            A default builder is created when none is supplied.
         """
 
         self._session_builder = (
-            session_builder if session_builder is not None else SessionBuilder()
+            session_builder
+            if session_builder is not None
+            else SessionBuilder()
         )
 
-    # ------------------------------------------------------------------
-    # Session
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
 
     def build_session(
         self,
@@ -89,6 +99,8 @@ class ActivityService:
     ) -> Session:
         """
         Build an immutable Session aggregate.
+
+        Session construction is delegated to SessionBuilder.
         """
 
         return self._session_builder.build(
@@ -96,16 +108,16 @@ class ActivityService:
             messages=messages,
         )
 
-    # ------------------------------------------------------------------
-    # Activity
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Activity Events
+    # =========================================================================
 
     def activity_events(
         self,
         session: Session,
     ) -> tuple[ActivityEvent, ...]:
         """
-        Return all activity events.
+        Return all activity events from the supplied Session.
         """
 
         return get_activity_events(
@@ -117,17 +129,21 @@ class ActivityService:
         session: Session,
     ) -> int:
         """
-        Return the number of activity events.
+        Return the total number of activity events.
         """
 
-        return len(self.activity_events(session))
+        return len(
+            self.activity_events(
+                session,
+            )
+        )
 
     def activity_counts(
         self,
         session: Session,
     ) -> Counter[ActivityType]:
         """
-        Count activity events by ActivityType.
+        Return activity counts grouped by ActivityType.
         """
 
         return count_activity_types(
@@ -139,7 +155,9 @@ class ActivityService:
         session: Session,
     ) -> ActivityEvent | None:
         """
-        Return the first recorded activity.
+        Return the earliest activity event.
+
+        Returns None when the Session contains no activities.
         """
 
         return first_activity_event(
@@ -151,16 +169,18 @@ class ActivityService:
         session: Session,
     ) -> ActivityEvent | None:
         """
-        Return the last recorded activity.
+        Return the latest activity event.
+
+        Returns None when the Session contains no activities.
         """
 
         return last_activity_event(
             session.activity_events,
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Activity Lookup
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def activity_events_by_type(
         self,
@@ -168,7 +188,7 @@ class ActivityService:
         activity_type: ActivityType,
     ) -> tuple[ActivityEvent, ...]:
         """
-        Return all activity events of the specified type.
+        Return activity events matching the supplied ActivityType.
         """
 
         return tuple(
@@ -183,7 +203,7 @@ class ActivityService:
         activity_type: ActivityType,
     ) -> bool:
         """
-        Return True if the specified activity exists.
+        Return True when the Session contains the specified activity type.
         """
 
         return bool(
@@ -193,16 +213,16 @@ class ActivityService:
             )
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Convenience Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def has_activities(
         self,
         session: Session,
     ) -> bool:
         """
-        Return True if the session contains activities.
+        Return True when the Session contains activity events.
         """
 
         return session.has_activities
@@ -212,14 +232,14 @@ class ActivityService:
         session: Session,
     ) -> bool:
         """
-        Return True if the session contains no events.
+        Return True when the Session contains no events.
         """
 
         return session.is_empty
 
-    # ------------------------------------------------------------------
-    # Builder
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Builder Access
+    # =========================================================================
 
     @property
     def builder(self) -> SessionBuilder:
@@ -229,20 +249,23 @@ class ActivityService:
 
         return self._session_builder
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Dunder Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def __repr__(self) -> str:
         """
         Return the official representation.
         """
 
-        return f"{self.__class__.__name__}" f"(builder={self.builder.name})"
+        return (
+            f"{self.__class__.__name__}"
+            f"(builder={self.builder.name})"
+        )
 
     def __str__(self) -> str:
         """
-        Return a human-readable representation.
+        Return a readable representation.
         """
 
         return self.__repr__()

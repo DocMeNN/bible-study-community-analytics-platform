@@ -12,7 +12,7 @@ Responsibilities:
     - Coordinate report data.
     - Aggregate attendance metrics.
     - Aggregate activity metrics.
-    - Prepare report-ready structures.
+    - Prepare immutable ReportResult objects.
     - Remain free of business logic.
 
 Rules:
@@ -27,7 +27,8 @@ Rules:
 Notes:
     - Business calculations remain inside the Domain.
     - Report rendering belongs to the Presentation layer.
-    - This service prepares data only.
+    - This service prepares application-level report data only.
+    - ReportResult is the stable application-facing contract.
 
 Author:
     OYBS Attendance Dashboard
@@ -47,6 +48,7 @@ from datetime import date
 # ============================================================================
 # Local Imports
 # ============================================================================
+from src.application.dto.report_result import ReportResult
 from src.application.services.activity_service import ActivityService
 from src.application.services.attendance_service import AttendanceService
 from src.application.services.dashboard_service import DashboardService
@@ -57,7 +59,10 @@ from src.domain.models.session import Session
 class ReportService:
     """
     Application service responsible for preparing
-    report-ready data.
+    immutable report-ready results.
+
+    Coordinates the AttendanceService, ActivityService
+    and DashboardService without implementing business rules.
     """
 
     def __init__(
@@ -77,7 +82,9 @@ class ReportService:
         )
 
         self._activity_service = (
-            activity_service if activity_service is not None else ActivityService()
+            activity_service
+            if activity_service is not None
+            else ActivityService()
         )
 
         self._dashboard_service = (
@@ -89,9 +96,9 @@ class ReportService:
             )
         )
 
-    # ------------------------------------------------------------------
-    # Session
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
 
     def build_session(
         self,
@@ -107,39 +114,46 @@ class ReportService:
             messages=messages,
         )
 
-    # ------------------------------------------------------------------
-    # Report
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Complete Report
+    # =========================================================================
 
     def report_data(
         self,
         session: Session,
         expected_attendees: int,
-    ) -> dict[str, object]:
+    ) -> ReportResult:
         """
-        Return complete report-ready data.
+        Build and return the complete report result.
+
+        The result contains four application-level sections:
+
+            - session
+            - dashboard
+            - attendance
+            - activity
         """
 
-        return {
-            "session": self._dashboard_service.session_summary(
+        return ReportResult(
+            session=self.session_section(
                 session,
             ),
-            "dashboard": self._dashboard_service.dashboard_summary(
+            dashboard=self.dashboard_section(
                 session,
                 expected_attendees,
             ),
-            "attendance": self._dashboard_service.attendance_summary(
+            attendance=self.attendance_section(
                 session,
                 expected_attendees,
             ),
-            "activity": self._dashboard_service.activity_summary(
+            activity=self.activity_section(
                 session,
             ),
-        }
+        )
 
-    # ------------------------------------------------------------------
-    # Individual Sections
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Report Sections
+    # =========================================================================
 
     def attendance_section(
         self,
@@ -147,7 +161,7 @@ class ReportService:
         expected_attendees: int,
     ) -> dict[str, object]:
         """
-        Return attendance section.
+        Return the attendance report section.
         """
 
         return self._dashboard_service.attendance_summary(
@@ -160,7 +174,7 @@ class ReportService:
         session: Session,
     ) -> dict[str, object]:
         """
-        Return activity section.
+        Return the activity report section.
         """
 
         return self._dashboard_service.activity_summary(
@@ -173,7 +187,7 @@ class ReportService:
         expected_attendees: int,
     ) -> dict[str, object]:
         """
-        Return dashboard section.
+        Return the dashboard report section.
         """
 
         return self._dashboard_service.dashboard_summary(
@@ -181,25 +195,21 @@ class ReportService:
             expected_attendees,
         )
 
-    # ------------------------------------------------------------------
-    # Session Section
-    # ------------------------------------------------------------------
-
     def session_section(
         self,
         session: Session,
     ) -> dict[str, object]:
         """
-        Return general session information.
+        Return the session report section.
         """
 
         return self._dashboard_service.session_summary(
             session,
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Convenience Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def has_attendance(
         self,
@@ -235,9 +245,9 @@ class ReportService:
 
         return session.is_empty
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Service Accessors
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     @property
     def attendance_service(self) -> AttendanceService:
@@ -263,9 +273,9 @@ class ReportService:
 
         return self._dashboard_service
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Dunder Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def __repr__(self) -> str:
         """

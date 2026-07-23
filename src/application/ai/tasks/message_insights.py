@@ -33,7 +33,7 @@ from src.domain.ai.prompts import PromptTemplate
 
 class MessageInsightsTask:
     """
-    AI task for extracting insights from messages.
+    AI task for generating insights from discussion messages.
     """
 
     def __init__(
@@ -57,7 +57,7 @@ class MessageInsightsTask:
         messages: str,
     ) -> str:
         """
-        Generate insights from messages.
+        Generate insights from discussion messages.
 
         Parameters
         ----------

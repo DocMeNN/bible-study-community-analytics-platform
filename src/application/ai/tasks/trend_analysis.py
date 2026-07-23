@@ -4,8 +4,7 @@
 Trend Analysis AI Task
 
 Purpose:
-    Generates AI-powered interpretations of attendance
-    and engagement trends.
+    Generates AI-powered analysis of participation and session trends.
 
 Architecture:
     Application Layer - AI Tasks
@@ -18,13 +17,9 @@ Notes:
     This task coordinates the trend analysis workflow.
 
     It does not:
-        - calculate analytics,
         - communicate with AI providers,
         - render prompts directly,
         - parse responses.
-
-    Analytics calculations remain inside the domain
-    analytics layer.
 
 Author: Me
 """
@@ -38,7 +33,7 @@ from src.domain.ai.prompts import PromptTemplate
 
 class TrendAnalysisTask:
     """
-    AI task for interpreting analytics trends.
+    AI task for analyzing participation and session trends.
     """
 
     def __init__(
@@ -62,12 +57,12 @@ class TrendAnalysisTask:
         metrics: str,
     ) -> str:
         """
-        Generate a trend analysis.
+        Analyze session and participation trends.
 
         Parameters
         ----------
         metrics:
-            Historical analytics metrics.
+            Session metrics to analyze.
 
         Returns
         -------

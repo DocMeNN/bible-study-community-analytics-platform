@@ -4,8 +4,7 @@
 Executive Summary AI Task
 
 Purpose:
-    Generates AI-powered executive summaries from
-    aggregated ministry reports.
+    Generates AI-powered executive summaries for ministry analytics.
 
 Architecture:
     Application Layer - AI Tasks
@@ -15,12 +14,15 @@ Dependencies:
     Domain AI Prompt Templates
 
 Notes:
-    This task coordinates the executive summary workflow.
+    This task coordinates the executive summary workflow. It prepares
+    report data, selects the correct prompt, and delegates execution
+    to the AI service.
 
     It does not:
         - communicate with AI providers,
         - render prompts directly,
-        - parse responses.
+        - parse responses,
+        - contain executive summary generation logic.
 
 Author: Me
 """
@@ -47,7 +49,7 @@ class ExecutiveSummaryTask:
         Parameters
         ----------
         ai_service:
-            AI service responsible for execution.
+            AI service responsible for AI execution.
         """
 
         self._ai_service = ai_service
@@ -63,7 +65,7 @@ class ExecutiveSummaryTask:
         Parameters
         ----------
         report:
-            Aggregated report data.
+            Report data to summarize.
 
         Returns
         -------

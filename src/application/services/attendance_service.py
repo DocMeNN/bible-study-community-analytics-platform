@@ -12,6 +12,7 @@ Responsibilities:
     - Expose attendance-related application workflows.
     - Coordinate attendance analytics.
     - Coordinate Done acknowledgement analytics.
+    - Produce typed AttendanceResult DTOs.
     - Remain free of business logic.
 
 Rules:
@@ -28,6 +29,7 @@ Notes:
     - Attendance is based on participation.
     - Missing members cannot be calculated because no member registry
       exists for the attendance population.
+    - Application results are exposed through AttendanceResult.
 
 Author:
     OYBS Attendance Dashboard
@@ -48,6 +50,7 @@ from datetime import date
 # Local Imports
 # ============================================================================
 from src.application.builders.session_builder import SessionBuilder
+from src.application.dto.attendance_result import AttendanceResult
 from src.domain.analytics.done import count_done_events
 from src.domain.enums.attendance_type import AttendanceType
 from src.domain.models.attendance_event import AttendanceEvent
@@ -75,12 +78,14 @@ class AttendanceService:
         """
 
         self._session_builder = (
-            session_builder if session_builder is not None else SessionBuilder()
+            session_builder
+            if session_builder is not None
+            else SessionBuilder()
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Session Construction
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def build_session(
         self,
@@ -96,9 +101,9 @@ class AttendanceService:
             messages=messages,
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Attendance Events
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def attendance_events(
         self,
@@ -224,9 +229,9 @@ class AttendanceService:
             AttendanceType.PRESENT: present_count,
         }
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Done Events
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def done_events(
         self,
@@ -266,9 +271,9 @@ class AttendanceService:
 
         return session.done_events[0]
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Participant Information
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def participant_count(
         self,
@@ -295,9 +300,60 @@ class AttendanceService:
 
         return session.unique_attendees
 
-    # ------------------------------------------------------------------
+    # =========================================================================
+    # Application Result
+    # =========================================================================
+
+    def attendance_result(
+        self,
+        session: Session,
+        expected_attendees: int,
+    ) -> AttendanceResult:
+        """
+        Return the complete attendance application result.
+
+        This method assembles attendance-related information
+        into the typed AttendanceResult DTO.
+
+        The service remains responsible for orchestration only.
+        Business calculations continue to be delegated to
+        the Domain model and Domain analytics.
+        """
+
+        return AttendanceResult(
+            attendees=self.attendees(
+                session,
+            ),
+            participants=self.participant_count(
+                session,
+            ),
+            attendance_count=self.attendance_count(
+                session,
+            ),
+            attendance_rate=self.attendance_rate(
+                session,
+                expected_attendees,
+            ),
+            attendance_types=self.attendance_counts(
+                session,
+            ),
+            attendance_events=self.attendance_events(
+                session,
+            ),
+            done_events=self.done_events(
+                session,
+            ),
+            done_count=self.done_count(
+                session,
+            ),
+            first_done=self.first_done(
+                session,
+            ),
+        )
+
+    # =========================================================================
     # Convenience Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def has_attendance(
         self,
@@ -329,9 +385,9 @@ class AttendanceService:
 
         return session.is_empty
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Builder Access
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     @property
     def builder(self) -> SessionBuilder:
@@ -341,16 +397,19 @@ class AttendanceService:
 
         return self._session_builder
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Dunder Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def __repr__(self) -> str:
         """
         Return official representation.
         """
 
-        return f"{self.__class__.__name__}(builder={self.builder.name})"
+        return (
+            f"{self.__class__.__name__}("
+            f"builder={self.builder.name})"
+        )
 
     def __str__(self) -> str:
         """
