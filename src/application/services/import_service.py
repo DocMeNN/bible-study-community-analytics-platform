@@ -13,8 +13,8 @@ Responsibilities
 - Delegate parsing.
 - Clean parsed records.
 - Validate cleaned records.
-- Build a Session aggregate.
-- Return a ready-to-use Session.
+- Build multiple Session aggregates.
+- Return a SessionCollection.
 
 Architectural Rules
 -------------------
@@ -29,9 +29,11 @@ Presentation
     ↓
 ImportService
     ↓
-Infrastructure Data Engine
+MultiSessionBuilder
     ↓
-Domain Models
+SessionBuilder
+    ↓
+SessionCollection
 """
 
 from __future__ import annotations
@@ -44,8 +46,10 @@ from pathlib import Path
 # ============================================================================
 # Local Imports
 # ============================================================================
-from src.application.services.dashboard_service import DashboardService
-from src.domain.models.session import Session
+from src.application.builders.multi_session_builder import (
+    MultiSessionBuilder,
+)
+from src.domain.models.session_collection import SessionCollection
 from src.infrastructure.data_engine.cleaner import clean_records
 from src.infrastructure.data_engine.exceptions import (
     InvalidExportFormatError,
@@ -70,26 +74,28 @@ class ImportService:
 
     def __init__(
         self,
-        dashboard_service: DashboardService | None = None,
+        multi_session_builder: MultiSessionBuilder | None = None,
     ) -> None:
         """
         Initialize the ImportService.
         """
 
-        self._dashboard_service = (
-            dashboard_service if dashboard_service is not None else DashboardService()
+        self._multi_session_builder = (
+            multi_session_builder
+            if multi_session_builder is not None
+            else MultiSessionBuilder()
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Import Workflow
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def import_chat(
         self,
         filepath: str | Path,
-    ) -> Session:
+    ) -> SessionCollection:
         """
-        Import a chat export and build a Session.
+        Import a chat export and build multiple Sessions.
         """
 
         raw_text = load_chat(
@@ -109,18 +115,17 @@ class ImportService:
         )
 
         if not messages:
-            raise ValueError("No valid messages were found in the chat export.")
+            raise ValueError(
+                "No valid messages were found in the chat export.",
+            )
 
-        session_date = messages[0].timestamp.date()
-
-        return self._dashboard_service.build_session(
-            session_date=session_date,
-            messages=messages,
+        return self._multi_session_builder.build(
+            messages,
         )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Parser Selection
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def _parse_records(
         self,
@@ -147,23 +152,23 @@ class ImportService:
                 raw_text,
             )
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Service Accessor
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     @property
-    def dashboard_service(
+    def multi_session_builder(
         self,
-    ) -> DashboardService:
+    ) -> MultiSessionBuilder:
         """
-        Return the DashboardService used by this service.
+        Return the MultiSessionBuilder.
         """
 
-        return self._dashboard_service
+        return self._multi_session_builder
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Dunder Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def __repr__(
         self,
@@ -174,8 +179,8 @@ class ImportService:
 
         return (
             f"{self.__class__.__name__}("
-            f"dashboard_service="
-            f"{self.dashboard_service.__class__.__name__})"
+            f"multi_session_builder="
+            f"{self.multi_session_builder.__class__.__name__})"
         )
 
     def __str__(

@@ -3,32 +3,37 @@
 """
 ImportService Application Service Tests
 
-Purpose:
-    Verify the complete chat import orchestration workflow.
+Purpose
+-------
+Verify the complete chat import orchestration workflow.
 
-Coverage:
-    - Service construction.
-    - DashboardService dependency injection.
-    - Native WhatsApp parser selection.
-    - Canonical parser fallback.
-    - Complete import workflow.
-    - Empty import validation.
-    - Session construction.
-    - Service accessor.
-    - Dunder methods.
+Coverage
+--------
+- Service construction.
+- MultiSessionBuilder dependency injection.
+- Native WhatsApp parser selection.
+- Canonical parser fallback.
+- Complete multi-session import workflow.
+- Empty import validation.
+- SessionCollection construction.
+- Service accessor.
+- Dunder methods.
 
-Rules:
-    - Test application orchestration only.
-    - Do not duplicate parser tests.
-    - Do not duplicate cleaner tests.
-    - Do not duplicate validator tests.
-    - Do not test Domain business rules.
+Rules
+-----
+- Test application orchestration only.
+- Do not duplicate parser tests.
+- Do not duplicate cleaner tests.
+- Do not duplicate validator tests.
+- Do not test Domain business rules.
 
-Author:
-    OYBS Attendance Dashboard
+Author
+------
+OYBS Attendance Dashboard
 
-Created:
-    July 2026
+Created
+-------
+July 2026
 """
 
 from __future__ import annotations
@@ -39,11 +44,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.application.services.dashboard_service import DashboardService
+from src.application.builders.multi_session_builder import (
+    MultiSessionBuilder,
+)
 from src.application.services.import_service import ImportService
 from src.domain.models.message import Message
-from src.domain.models.session import Session
-from src.infrastructure.data_engine.exceptions import InvalidExportFormatError
+from src.domain.models.session_collection import SessionCollection
+from src.infrastructure.data_engine.exceptions import (
+    InvalidExportFormatError,
+)
 from src.infrastructure.data_engine.models import RawMessageRecord
 
 # ============================================================================
@@ -59,10 +68,10 @@ def import_service() -> ImportService:
 
 
 @pytest.fixture
-def dashboard_service() -> DashboardService:
-    """Return a DashboardService."""
+def multi_session_builder() -> MultiSessionBuilder:
+    """Return a MultiSessionBuilder."""
 
-    return DashboardService()
+    return MultiSessionBuilder()
 
 
 @pytest.fixture
@@ -113,24 +122,27 @@ class TestImportServiceConstruction:
         self,
         import_service: ImportService,
     ) -> None:
-        """Default construction creates a DashboardService."""
+        """Default construction creates a MultiSessionBuilder."""
 
         assert isinstance(
-            import_service.dashboard_service,
-            DashboardService,
+            import_service.multi_session_builder,
+            MultiSessionBuilder,
         )
 
-    def test_dependency_injection_preserves_dashboard_service(
+    def test_dependency_injection_preserves_multi_session_builder(
         self,
-        dashboard_service: DashboardService,
+        multi_session_builder: MultiSessionBuilder,
     ) -> None:
-        """Injected DashboardService is preserved."""
+        """Injected MultiSessionBuilder is preserved."""
 
         service = ImportService(
-            dashboard_service=dashboard_service,
+            multi_session_builder=multi_session_builder,
         )
 
-        assert service.dashboard_service is dashboard_service
+        assert (
+            service.multi_session_builder
+            is multi_session_builder
+        )
 
 
 # ============================================================================
@@ -228,13 +240,13 @@ class TestParserSelection:
 class TestImportWorkflow:
     """Test complete import workflow."""
 
-    def test_import_chat_returns_session(
+    def test_import_chat_returns_session_collection(
         self,
         import_service: ImportService,
         message: Message,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """import_chat returns a Session."""
+        """import_chat returns a SessionCollection."""
 
         monkeypatch.setattr(
             "src.application.services.import_service.load_chat",
@@ -271,23 +283,35 @@ class TestImportWorkflow:
 
         assert isinstance(
             result,
-            Session,
+            SessionCollection,
         )
 
-    def test_import_chat_uses_first_message_date(
+        assert result.count == 1
+
+    def test_import_chat_delegates_to_multi_session_builder(
         self,
-        import_service: ImportService,
+        multi_session_builder: MultiSessionBuilder,
         message: Message,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Session date is derived from the first validated message."""
-
-        dashboard_service = Mock(
-            spec=DashboardService,
-        )
+        """Validated messages are delegated to MultiSessionBuilder."""
 
         service = ImportService(
-            dashboard_service=dashboard_service,
+            multi_session_builder=multi_session_builder,
+        )
+
+        builder = Mock(
+            spec=MultiSessionBuilder,
+        )
+
+        expected_collection = SessionCollection(
+            sessions=(),
+        )
+
+        builder.build.return_value = expected_collection
+
+        service = ImportService(
+            multi_session_builder=builder,
         )
 
         monkeypatch.setattr(
@@ -319,21 +343,14 @@ class TestImportWorkflow:
             ),
         )
 
-        expected_session = Session(
-            session_date=message.timestamp.date(),
-        )
-
-        dashboard_service.build_session.return_value = expected_session
-
         result = service.import_chat(
             "chat.txt",
         )
 
-        assert result is expected_session
+        assert result is expected_collection
 
-        dashboard_service.build_session.assert_called_once_with(
-            session_date=message.timestamp.date(),
-            messages=[message],
+        builder.build.assert_called_once_with(
+            [message],
         )
 
     def test_import_chat_executes_pipeline_in_order(
@@ -447,7 +464,7 @@ class TestImportWorkflow:
 
         assert isinstance(
             result,
-            Session,
+            SessionCollection,
         )
 
 
@@ -512,15 +529,15 @@ class TestEmptyImport:
 class TestServiceAccessor:
     """Test service accessors."""
 
-    def test_dashboard_service_accessor(
+    def test_multi_session_builder_accessor(
         self,
         import_service: ImportService,
     ) -> None:
-        """dashboard_service returns the configured service."""
+        """multi_session_builder returns the configured builder."""
 
         assert isinstance(
-            import_service.dashboard_service,
-            DashboardService,
+            import_service.multi_session_builder,
+            MultiSessionBuilder,
         )
 
 
@@ -542,13 +559,13 @@ class TestDunderMethods:
             import_service,
         )
 
-    def test_repr_contains_dashboard_service_name(
+    def test_repr_contains_multi_session_builder_name(
         self,
         import_service: ImportService,
     ) -> None:
-        """repr identifies DashboardService."""
+        """repr identifies MultiSessionBuilder."""
 
-        assert "DashboardService" in repr(
+        assert "MultiSessionBuilder" in repr(
             import_service,
         )
 

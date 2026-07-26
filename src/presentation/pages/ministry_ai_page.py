@@ -1,4 +1,4 @@
-# src/presentation/pages/ministry_ai_panel.py
+# src/presentation/pages/ministry_ai_page.py
 
 """
 AI Ministry Report Page
@@ -51,17 +51,25 @@ def render() -> None:
 
     st.title("🧠 AI Ministry Report")
 
-    if not context.has_session():
+    if not context.has_session_collection():
         st.info(
             "Load a session before generating an AI ministry report.",
         )
         return
 
-    session = context.current_session()
+    session_collection = context.current_session_collection()
+
+    if session_collection is None:
+        st.error(
+            "Unable to retrieve the active session collection.",
+        )
+        return
+
+    session = session_collection.first_session
 
     if session is None:
-        st.error(
-            "Unable to retrieve the active session.",
+        st.info(
+            "The loaded session collection contains no sessions.",
         )
         return
 

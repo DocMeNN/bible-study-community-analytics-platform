@@ -8,7 +8,8 @@ Purpose:
     attendance and activity services.
 
 Responsibilities:
-    - Build Session aggregates.
+    - Build individual Session aggregates.
+    - Build multiple Session aggregates.
     - Coordinate attendance metrics.
     - Coordinate activity metrics.
     - Provide dashboard-ready data.
@@ -23,7 +24,7 @@ Rules:
 
 Notes:
     - Delegates business calculations to Domain services.
-    - Delegates Session construction to AttendanceService.
+    - Delegates Session construction to application builders.
     - Acts as the primary service consumed by the Presentation layer.
 
 Author:
@@ -44,24 +45,29 @@ from datetime import date
 # ============================================================================
 # Local Imports
 # ============================================================================
+from src.application.builders.multi_session_builder import (
+    MultiSessionBuilder,
+)
 from src.application.services.activity_service import ActivityService
 from src.application.services.attendance_service import AttendanceService
 from src.domain.models.message import Message
 from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
 
 
 class DashboardService:
     """
     Application service for dashboard workflows.
 
-    Coordinates application services required to assemble
-    dashboard-ready session information.
+    Coordinates application services and builders required
+    to assemble dashboard-ready session information.
     """
 
     def __init__(
         self,
         attendance_service: AttendanceService | None = None,
         activity_service: ActivityService | None = None,
+        multi_session_builder: MultiSessionBuilder | None = None,
     ) -> None:
         """
         Initialize dashboard service.
@@ -79,9 +85,15 @@ class DashboardService:
             else ActivityService()
         )
 
-    # ------------------------------------------------------------------
-    # Session
-    # ------------------------------------------------------------------
+        self._multi_session_builder = (
+            multi_session_builder
+            if multi_session_builder is not None
+            else MultiSessionBuilder()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
 
     def build_session(
         self,
@@ -89,7 +101,7 @@ class DashboardService:
         messages: Iterable[Message],
     ) -> Session:
         """
-        Build a Session aggregate.
+        Build a single Session aggregate.
         """
 
         return self._attendance_service.build_session(
@@ -97,9 +109,21 @@ class DashboardService:
             messages=messages,
         )
 
-    # ------------------------------------------------------------------
+    def build_sessions(
+        self,
+        messages: Iterable[Message],
+    ) -> SessionCollection:
+        """
+        Detect and build multiple Session aggregates.
+        """
+
+        return self._multi_session_builder.build(
+            messages,
+        )
+
+    # =========================================================================
     # Dashboard Summary
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def dashboard_summary(
         self,
@@ -127,9 +151,9 @@ class DashboardService:
             "duration": session.duration,
         }
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Attendance
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def attendance_summary(
         self,
@@ -159,9 +183,9 @@ class DashboardService:
             ),
         }
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Activity
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def activity_summary(
         self,
@@ -186,9 +210,9 @@ class DashboardService:
             ),
         }
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Session Summary
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def session_summary(
         self,
@@ -210,9 +234,9 @@ class DashboardService:
             "total_events": session.total_events,
         }
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Convenience Methods
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     def has_attendance(
         self,
@@ -244,12 +268,14 @@ class DashboardService:
 
         return session.is_empty
 
-    # ------------------------------------------------------------------
+    # =========================================================================
     # Service Accessors
-    # ------------------------------------------------------------------
+    # =========================================================================
 
     @property
-    def attendance_service(self) -> AttendanceService:
+    def attendance_service(
+        self,
+    ) -> AttendanceService:
         """
         Return the AttendanceService.
         """
@@ -257,18 +283,32 @@ class DashboardService:
         return self._attendance_service
 
     @property
-    def activity_service(self) -> ActivityService:
+    def activity_service(
+        self,
+    ) -> ActivityService:
         """
         Return the ActivityService.
         """
 
         return self._activity_service
 
-    # ------------------------------------------------------------------
-    # Dunder Methods
-    # ------------------------------------------------------------------
+    @property
+    def multi_session_builder(
+        self,
+    ) -> MultiSessionBuilder:
+        """
+        Return the MultiSessionBuilder.
+        """
 
-    def __repr__(self) -> str:
+        return self._multi_session_builder
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(
+        self,
+    ) -> str:
         """
         Return the official representation.
         """
@@ -278,10 +318,14 @@ class DashboardService:
             f"attendance_service="
             f"{self.attendance_service.__class__.__name__}, "
             f"activity_service="
-            f"{self.activity_service.__class__.__name__})"
+            f"{self.activity_service.__class__.__name__}, "
+            f"multi_session_builder="
+            f"{self.multi_session_builder.__class__.__name__})"
         )
 
-    def __str__(self) -> str:
+    def __str__(
+        self,
+    ) -> str:
         """
         Return a readable representation.
         """

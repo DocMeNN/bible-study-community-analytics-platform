@@ -1,4 +1,4 @@
-# src/presentation/context.py
+﻿# src/presentation/context.py
 
 """
 Presentation Context
@@ -10,12 +10,13 @@ Provides a centralized state manager for the Presentation layer.
 Responsibilities
 ----------------
 - Manage Streamlit session state.
-- Store the active Session aggregate.
+- Store the active SessionCollection.
+- Store presentation grouping state.
+- Store the currently selected Session.
 - Provide access to application services.
 - Provide access to presentation controllers.
 - Provide access to presentation ViewModels.
 - Store presentation configuration values.
-- Act as the bridge between the UI and the Application layer.
 
 Architectural Rules
 -------------------
@@ -24,6 +25,26 @@ Architectural Rules
 - No parsing.
 - No Infrastructure access outside object composition.
 - No Domain calculations.
+
+Multi-Level Session Presentation
+--------------------------------
+The Presentation layer stores the complete imported SessionCollection.
+
+The Presentation layer may group Sessions for navigation.
+
+The Domain remains centered on Daily Session.
+
+The presentation flow is:
+
+SessionCollection
+        ↓
+Session Grouping
+        ↓
+Selected Session Group
+        ↓
+Selected Daily Session
+        ↓
+Analytics
 """
 
 from __future__ import annotations
@@ -31,6 +52,7 @@ from __future__ import annotations
 # ============================================================================
 # Standard Library Imports
 # ============================================================================
+from datetime import date
 from typing import Final, cast
 
 # ============================================================================
@@ -49,7 +71,17 @@ from src.application.services.import_service import ImportService
 from src.application.services.report_service import ReportService
 from src.config.ai_config import load_ai_config
 from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
 from src.presentation.controllers.ai_controller import AIController
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.session_grouping_service import (
+    SessionGroupingService,
+)
+from src.presentation.grouping.weekly_grouping_strategy import (
+    WeeklyGroupingStrategy,
+)
 from src.presentation.viewmodels.activity_viewmodel import ActivityViewModel
 from src.presentation.viewmodels.ai_viewmodel import AIViewModel
 from src.presentation.viewmodels.attendance_viewmodel import (
@@ -64,8 +96,13 @@ from src.presentation.viewmodels.report_viewmodel import ReportViewModel
 # Session State Keys
 # ============================================================================
 
-_SESSION_KEY: Final = "current_session"
+_SESSION_COLLECTION_KEY: Final = "session_collection"
+_SELECTED_SESSION_DATE_KEY: Final = "selected_session_date"
+_SELECTED_GROUP_KEY: Final = "selected_session_group"
 _EXPECTED_ATTENDEES_KEY: Final = "expected_attendees"
+
+_GROUPING_SERVICE_KEY: Final = "session_grouping_service"
+_GROUPING_CONFIGURATION_KEY: Final = "grouping_configuration"
 
 _ATTENDANCE_SERVICE_KEY: Final = "attendance_service"
 _ACTIVITY_SERVICE_KEY: Final = "activity_service"
@@ -74,7 +111,6 @@ _REPORT_SERVICE_KEY: Final = "report_service"
 _IMPORT_SERVICE_KEY: Final = "import_service"
 
 _AI_SERVICE_KEY: Final = "ai_service"
-
 _AI_CONTROLLER_KEY: Final = "ai_controller"
 
 _AI_VIEWMODEL_KEY: Final = "ai_viewmodel"
@@ -82,6 +118,7 @@ _ATTENDANCE_VIEWMODEL_KEY: Final = "attendance_viewmodel"
 _ACTIVITY_VIEWMODEL_KEY: Final = "activity_viewmodel"
 _DASHBOARD_VIEWMODEL_KEY: Final = "dashboard_viewmodel"
 _REPORT_VIEWMODEL_KEY: Final = "report_viewmodel"
+
 
 # ============================================================================
 # Initialization
@@ -97,12 +134,18 @@ def initialize() -> None:
 
     state = st.session_state
 
-    # ------------------------------------------------------------------------
-    # Session State
-    # ------------------------------------------------------------------------
+    state.setdefault(
+        _SESSION_COLLECTION_KEY,
+        None,
+    )
 
     state.setdefault(
-        _SESSION_KEY,
+        _SELECTED_SESSION_DATE_KEY,
+        None,
+    )
+
+    state.setdefault(
+        _SELECTED_GROUP_KEY,
         None,
     )
 
@@ -111,9 +154,27 @@ def initialize() -> None:
         0,
     )
 
-    # ------------------------------------------------------------------------
-    # Application Services
-    # ------------------------------------------------------------------------
+    state.setdefault(
+        _GROUPING_CONFIGURATION_KEY,
+        GroupingConfiguration.weekly(),
+    )
+
+    grouping_configuration = cast(
+        GroupingConfiguration,
+        state[_GROUPING_CONFIGURATION_KEY],
+    )
+
+    state.setdefault(
+        _GROUPING_SERVICE_KEY,
+        SessionGroupingService(
+            strategy=WeeklyGroupingStrategy(
+                week_start_day=(
+                    grouping_configuration.week_start_day
+                ),
+            ),
+            period=grouping_configuration.period,
+        ),
+    )
 
     state.setdefault(
         _ATTENDANCE_SERVICE_KEY,
@@ -159,17 +220,8 @@ def initialize() -> None:
 
     state.setdefault(
         _IMPORT_SERVICE_KEY,
-        ImportService(
-            dashboard_service=cast(
-                DashboardService,
-                state[_DASHBOARD_SERVICE_KEY],
-            ),
-        ),
+        ImportService(),
     )
-
-    # ------------------------------------------------------------------------
-    # AI
-    # ------------------------------------------------------------------------
 
     state.setdefault(
         _AI_SERVICE_KEY,
@@ -187,10 +239,6 @@ def initialize() -> None:
             ),
         ),
     )
-
-    # ------------------------------------------------------------------------
-    # ViewModels
-    # ------------------------------------------------------------------------
 
     state.setdefault(
         _AI_VIEWMODEL_KEY,
@@ -244,61 +292,185 @@ def initialize() -> None:
 
 
 # ============================================================================
-# Session
+# Session Collection
 # ============================================================================
 
 
-def set_session(
-    session: Session,
+def set_session_collection(
+    session_collection: SessionCollection,
 ) -> None:
     """
-    Store the active Session.
+    Store the active SessionCollection.
+
+    The first session is selected automatically.
     """
 
-    st.session_state[_SESSION_KEY] = session
+    st.session_state[_SESSION_COLLECTION_KEY] = session_collection
+
+    if session_collection.has_sessions:
+
+        first_session = session_collection.first_session
+
+        if first_session is not None:
+
+            st.session_state[
+                _SELECTED_SESSION_DATE_KEY
+            ] = first_session.session_date
+
+    else:
+
+        st.session_state[
+            _SELECTED_SESSION_DATE_KEY
+        ] = None
+
+    st.session_state[
+        _SELECTED_GROUP_KEY
+    ] = None
 
 
-def current_session() -> Session | None:
-    """
-    Return the active Session.
-    """
+def current_session_collection() -> SessionCollection | None:
+    """Return the active SessionCollection."""
 
     return cast(
-        Session | None,
-        st.session_state[_SESSION_KEY],
+        SessionCollection | None,
+        st.session_state[_SESSION_COLLECTION_KEY],
     )
 
 
-def has_session() -> bool:
+def has_session_collection() -> bool:
+    """Return True when a SessionCollection is loaded."""
+
+    return current_session_collection() is not None
+
+
+def clear_session_collection() -> None:
+    """Remove the active SessionCollection and selection state."""
+
+    st.session_state[_SESSION_COLLECTION_KEY] = None
+    st.session_state[_SELECTED_SESSION_DATE_KEY] = None
+    st.session_state[_SELECTED_GROUP_KEY] = None
+
+
+# ============================================================================
+# Grouping
+# ============================================================================
+
+
+def grouping_service() -> SessionGroupingService:
+    """Return the SessionGroupingService."""
+
+    return cast(
+        SessionGroupingService,
+        st.session_state[_GROUPING_SERVICE_KEY],
+    )
+
+
+def grouping_configuration() -> GroupingConfiguration:
+    """Return the active grouping configuration."""
+
+    return cast(
+        GroupingConfiguration,
+        st.session_state[_GROUPING_CONFIGURATION_KEY],
+    )
+
+
+def grouped_sessions() -> tuple:
     """
-    Return True when a Session is loaded.
+    Return the current presentation grouping.
+
+    Returns
+    -------
+    tuple
+        Presentation session groups.
     """
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        return ()
+
+    return grouping_service().group(
+        session_collection,
+    )
+
+
+# ============================================================================
+# Selected Session
+# ============================================================================
+
+
+def set_selected_session(
+    session_date: date,
+) -> None:
+    """Select a Session by its session date."""
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        raise RuntimeError(
+            "Cannot select a session without a SessionCollection.",
+        )
+
+    if not session_collection.contains_date(
+        session_date,
+    ):
+        raise ValueError(
+            f"No session exists for date: {session_date}.",
+        )
+
+    st.session_state[
+        _SELECTED_SESSION_DATE_KEY
+    ] = session_date
+
+
+def selected_session_date() -> date | None:
+    """Return the selected Session date."""
+
+    return cast(
+        date | None,
+        st.session_state[_SELECTED_SESSION_DATE_KEY],
+    )
+
+
+def current_session() -> Session | None:
+    """Return the currently selected Session."""
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        return None
+
+    session_date = selected_session_date()
+
+    if session_date is None:
+        return None
+
+    return session_collection.get_session(
+        session_date,
+    )
+
+
+def has_selected_session() -> bool:
+    """Return True when a Session is currently selected."""
 
     return current_session() is not None
 
 
-def clear_session() -> None:
-    """
-    Remove the active Session.
-    """
-
-    st.session_state[_SESSION_KEY] = None
+# ============================================================================
+# Expected Attendees
+# ============================================================================
 
 
 def set_expected_attendees(
     value: int,
 ) -> None:
-    """
-    Store the expected attendee count.
-    """
+    """Store the expected attendee count."""
 
     st.session_state[_EXPECTED_ATTENDEES_KEY] = value
 
 
 def expected_attendees() -> int:
-    """
-    Return the configured expected attendee count.
-    """
+    """Return the configured expected attendee count."""
 
     return cast(
         int,
@@ -312,9 +484,7 @@ def expected_attendees() -> int:
 
 
 def attendance_service() -> AttendanceService:
-    """
-    Return the AttendanceService.
-    """
+    """Return the AttendanceService."""
 
     return cast(
         AttendanceService,
@@ -323,9 +493,7 @@ def attendance_service() -> AttendanceService:
 
 
 def activity_service() -> ActivityService:
-    """
-    Return the ActivityService.
-    """
+    """Return the ActivityService."""
 
     return cast(
         ActivityService,
@@ -334,9 +502,7 @@ def activity_service() -> ActivityService:
 
 
 def dashboard_service() -> DashboardService:
-    """
-    Return the DashboardService.
-    """
+    """Return the DashboardService."""
 
     return cast(
         DashboardService,
@@ -345,9 +511,7 @@ def dashboard_service() -> DashboardService:
 
 
 def report_service() -> ReportService:
-    """
-    Return the ReportService.
-    """
+    """Return the ReportService."""
 
     return cast(
         ReportService,
@@ -356,9 +520,7 @@ def report_service() -> ReportService:
 
 
 def import_service() -> ImportService:
-    """
-    Return the ImportService.
-    """
+    """Return the ImportService."""
 
     return cast(
         ImportService,
@@ -367,9 +529,7 @@ def import_service() -> ImportService:
 
 
 def ai_service() -> AIService:
-    """
-    Return the shared AIService.
-    """
+    """Return the shared AIService."""
 
     return cast(
         AIService,
@@ -383,9 +543,7 @@ def ai_service() -> AIService:
 
 
 def ai_controller() -> AIController:
-    """
-    Return the AIController.
-    """
+    """Return the AIController."""
 
     return cast(
         AIController,
@@ -399,9 +557,7 @@ def ai_controller() -> AIController:
 
 
 def ai_viewmodel() -> AIViewModel:
-    """
-    Return the shared AIViewModel.
-    """
+    """Return the shared AIViewModel."""
 
     return cast(
         AIViewModel,
@@ -410,9 +566,7 @@ def ai_viewmodel() -> AIViewModel:
 
 
 def attendance_viewmodel() -> AttendanceViewModel:
-    """
-    Return the shared AttendanceViewModel.
-    """
+    """Return the shared AttendanceViewModel."""
 
     return cast(
         AttendanceViewModel,
@@ -421,9 +575,7 @@ def attendance_viewmodel() -> AttendanceViewModel:
 
 
 def activity_viewmodel() -> ActivityViewModel:
-    """
-    Return the shared ActivityViewModel.
-    """
+    """Return the shared ActivityViewModel."""
 
     return cast(
         ActivityViewModel,
@@ -432,9 +584,7 @@ def activity_viewmodel() -> ActivityViewModel:
 
 
 def dashboard_viewmodel() -> DashboardViewModel:
-    """
-    Return the shared DashboardViewModel.
-    """
+    """Return the shared DashboardViewModel."""
 
     return cast(
         DashboardViewModel,
@@ -443,9 +593,7 @@ def dashboard_viewmodel() -> DashboardViewModel:
 
 
 def report_viewmodel() -> ReportViewModel:
-    """
-    Return the shared ReportViewModel.
-    """
+    """Return the shared ReportViewModel."""
 
     return cast(
         ReportViewModel,
@@ -459,10 +607,17 @@ def report_viewmodel() -> ReportViewModel:
 
 __all__ = [
     "initialize",
-    "set_session",
+    "set_session_collection",
+    "current_session_collection",
+    "has_session_collection",
+    "clear_session_collection",
+    "grouping_service",
+    "grouping_configuration",
+    "grouped_sessions",
+    "set_selected_session",
+    "selected_session_date",
     "current_session",
-    "has_session",
-    "clear_session",
+    "has_selected_session",
     "set_expected_attendees",
     "expected_attendees",
     "attendance_service",

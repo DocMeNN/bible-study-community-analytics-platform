@@ -1,0 +1,417 @@
+# CP-014 — Presentation Layer Completion & Integration Review
+
+## Checkpoint Status
+
+ACTIVE — UNDER REVIEW
+
+## Date Opened
+
+24 July 2026
+
+## Project
+
+Online Bible Study Attendance and Participation Analytics Platform
+
+## Repository
+
+bible-study-community-analytics-platform
+
+## Organisation
+
+TechAndMe
+
+## Architect
+
+Me
+
+---
+
+# 1. Checkpoint Objective
+
+CP-014 is the first live integration and completion review of the Presentation Layer.
+
+The objective is to review the Presentation Layer as a complete working system and validate it against real-world application behavior.
+
+This checkpoint began after CP-013 successfully established the Presentation ViewModel boundary.
+
+---
+
+# 2. Initial Live Streamlit Test
+
+The application was launched successfully using:
+
+streamlit run app.py
+
+The application loaded in the browser at:
+
+localhost:8501
+
+The Dashboard displayed successfully.
+
+The initial live test confirmed that the application can launch and render the current Presentation Layer.
+
+---
+
+# 3. First CP-014 Finding
+
+During review of the actual WhatsApp export, an inconsistency was identified in the assumed Scripture Reading and session-detection rule.
+
+The actual export contains a message such as:
+
+*FIRST SCRIPTURE ON FOR THE YEAR 2023...SUNDAY 1ST OF JANUARY 2023*
+
+followed by Bible reading references:
+
+*GENESIS 1-2*
+*MATTHEW 1*
+
+The Scripture Reading marker therefore does not necessarily depend on the exact phrase:
+
+SCRIPTURE READING
+
+This demonstrates that the real-world source data is more varied than the initial detection assumption.
+
+---
+
+# 4. CP-014 Decision
+
+The session-detection rule must be reviewed against the actual WhatsApp data.
+
+The system must identify the Scripture Reading activity by its business meaning and recognizable structure rather than by one exact phrase.
+
+A valid Scripture Reading marker should be associated with:
+
+Day of Week
++
+Written Calendar Date
++
+Month
++
+Year
++
+Bible Reading Reference
+
+The exact wording may vary.
+
+---
+
+# 5. Critical Date Distinction
+
+The WhatsApp message timestamp and the written reading date are separate values.
+
+Example:
+
+Message Timestamp:
+31 December 2022
+
+Written Reading Date:
+Sunday 1st of January 2023
+
+This can still represent a valid Scripture Reading activity.
+
+The Scripture Reading activity occurs when the Scripture Reading message is posted.
+
+Therefore:
+
+Message Posted
+        ↓
+Scripture Reading Activity
+        ↓
+Session Begins
+
+The written date identifies the reading associated with the session.
+
+The dates do not need to be identical.
+
+---
+
+# 6. Expected Session Model
+
+The study program is organized around Daily Sessions.
+
+The expected relationship for a complete 365-day study period is approximately:
+
+365 Scripture Reading Activities
+≈
+365 Daily Sessions
+
+This is an expected validation target.
+
+The system should not artificially force the result to 365.
+
+Instead, differences must be investigated.
+
+Possible causes include:
+
+- Unrecognized marker variation.
+- Missing export data.
+- Duplicate markers.
+- Invalid source data.
+- Date-range filtering.
+- Actual missing Scripture Reading activity.
+
+---
+
+# 7. Iterative Session Processing Concern
+
+A specific architectural concern has been recorded for review.
+
+The application uses an iterative approach to process sessions.
+
+The intended conceptual flow is:
+
+Filtered WhatsApp Messages
+        ↓
+Detect Scripture Reading Marker
+        ↓
+Build Session
+        ↓
+Analyze Session
+        ↓
+Detect Next Marker
+        ↓
+Build Next Session
+        ↓
+Continue
+
+This approach is appropriate for large WhatsApp exports and supports:
+
+- Large datasets.
+- Reduced processing pressure.
+- Reduced AI context pressure.
+- Session-level analysis.
+- Easier error isolation.
+
+However, CP-014 must verify that the implementation correctly handles:
+
+- Session boundaries.
+- Marker detection.
+- Message assignment.
+- First session detection.
+- Final session detection.
+- Empty or incomplete sessions.
+- Selected date ranges.
+
+---
+
+# 8. Timeline Selection Concern
+
+The application must support selecting a specific duration or timeline.
+
+The intended user workflow includes:
+
+Start Date
++
+End Date
+
+followed by:
+
+Message Filtering
+        ↓
+Session Detection
+        ↓
+Iterative Session Processing
+        ↓
+Analytics
+
+The relationship between the selected timeline and Scripture Reading detection must be carefully reviewed.
+
+A message may be posted before the written reading date.
+
+Therefore, the implementation must not accidentally reject or exclude a valid Scripture Reading marker merely because:
+
+Message Date
+!=
+Written Reading Date
+
+The timeline semantics must be clearly defined and applied consistently across:
+
+Import
+→
+Session Detection
+→
+Analytics
+→
+Reports
+
+---
+
+# 9. Current CP-014 Review Scope
+
+The following areas must be reviewed.
+
+## Presentation Architecture
+
+- Page-to-ViewModel boundaries.
+- Presentation Context composition.
+- Dependency flow.
+- Remaining direct Application Service access.
+- Presentation component architecture.
+- Navigation integration.
+
+## Live Application Behavior
+
+- Application launch.
+- Home page.
+- Navigation.
+- File upload.
+- Date-range selection.
+- Message processing.
+- Dashboard.
+- Attendance.
+- Activity.
+- Reports.
+- Ministry AI.
+- Settings.
+
+## Session Integration
+
+- Scripture Reading marker detection.
+- Session start detection.
+- Session boundary behavior.
+- Message-to-session assignment.
+- Iterative session processing.
+- Timeline filtering.
+- First and final session behavior.
+
+---
+
+# 10. Current CP-014 Finding Status
+
+## Finding 001 — Scripture Reading Marker Recognition
+
+Status: Under Review
+
+### Finding
+
+The current session-detection assumption may be too dependent on the exact phrase:
+
+SCRIPTURE READING
+
+### Evidence
+
+The real WhatsApp export contains a valid reading announcement using a structure such as:
+
+FIRST SCRIPTURE ON FOR THE YEAR 2023...
+SUNDAY 1ST OF JANUARY 2023
+
+followed by:
+
+GENESIS 1-2
+MATTHEW 1
+
+### Required Action
+
+Inspect the current session-detection implementation and compare it with the real source-data structure.
+
+No code change should be made until the existing implementation has been reviewed.
+
+---
+
+# 11. CP-014 Principle
+
+This checkpoint must prioritize:
+
+Real-World Data Behavior
+
+over:
+
+Assumed Data Structure
+
+The live application test has demonstrated the value of testing the actual system with realistic source data.
+
+---
+
+# 12. CP-014 Current Status
+
+Presentation Layer:
+Under Live Review
+
+Streamlit Application:
+Successfully Launched
+
+Dashboard:
+Rendered Successfully
+
+Session Detection:
+Requires Review
+
+Timeline Selection:
+Requires Review
+
+Iterative Session Processing:
+Requires Validation
+
+Integration Testing:
+In Progress
+
+---
+
+# 13. Next Action
+
+The next action is to inspect the existing implementation of:
+
+Session Detection
+Scripture Reading Recognition
+Session Construction
+Date Filtering
+Iterative Session Processing
+
+The implementation must be reviewed against:
+
+ADR-001 — Scripture Reading Session Marker Detection
+
+and:
+
+SPEC-001 — Session Detection Specification
+
+After the implementation review, the required code changes will be determined.
+
+---
+
+# 14. CP-014 Completion Criteria
+
+CP-014 may be completed when:
+
+- The Presentation Layer has been reviewed as a complete system.
+- Streamlit pages have been manually tested.
+- Navigation has been validated.
+- Page-to-ViewModel boundaries have been confirmed.
+- Direct service access has been reviewed.
+- Session detection has been reconciled with real WhatsApp data.
+- Timeline selection behavior has been validated.
+- Iterative session processing has been validated.
+- Required integration issues have been resolved.
+- Presentation-layer test coverage has been strengthened.
+- Mypy passes.
+- Ruff passes.
+- Pytest passes.
+- The application has successfully completed the agreed live workflow review.
+
+---
+
+# 15. NEXT PHASE
+
+## CP-015 — Application-Wide Integration Testing
+
+Status: Planned
+
+Focus: Validate the complete end-to-end workflow from WhatsApp export through processing, session construction, analytics, Presentation Layer, and reporting.
+
+The project should not move to CP-015 until the CP-014 Presentation Layer and session-detection review is complete.
+
+---
+
+# 16. Checkpoint Status
+
+CP-014 — ACTIVE
+
+Current Focus:
+
+Presentation Layer Completion
++
+Live Streamlit Integration Testing
++
+Session Detection Review
++
+Timeline and Iterative Processing Validation

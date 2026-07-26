@@ -5,11 +5,12 @@ Attendance Page
 
 Purpose
 -------
-Displays attendance analytics for the active ministry session.
+Displays attendance analytics for the selected ministry session.
 
 Responsibilities
 ----------------
 - Coordinate the AttendanceViewModel.
+- Consume the selected Session through the shared Session Selector.
 - Display attendance session summary.
 - Coordinate attendance presentation components.
 - Display the attendance page footer.
@@ -40,6 +41,7 @@ from src.presentation.components.attendance import (
 )
 from src.presentation.components.common import (
     metric_cards,
+    session_selector,
     tables,
 )
 from src.presentation.utils import formatters
@@ -58,18 +60,18 @@ def render() -> None:
 
     st.title("👥 Attendance")
 
-    if not context.has_session():
+    if not context.has_session_collection():
         st.info(
-            "No session loaded.\n\n"
-            "Please load a WhatsApp session from the Home page.",
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
         )
         return
 
-    session = context.current_session()
+    session = session_selector.render()
 
     if session is None:
-        st.error(
-            "Unable to retrieve the active session.",
+        st.info(
+            "No session is currently selected.",
         )
         return
 

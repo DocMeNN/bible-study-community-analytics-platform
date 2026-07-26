@@ -5,11 +5,13 @@ Dashboard Page
 
 Purpose
 -------
-Displays the primary dashboard for a meeting session.
+Displays the primary dashboard for a selected study session.
 
 Responsibilities
 ----------------
 - Coordinate dashboard presentation workflows.
+- Select a Session from the active SessionCollection.
+- Persist the selected Session through the shared Session Selector.
 - Display dashboard metrics.
 - Display attendance analytics.
 - Display activity analytics.
@@ -47,6 +49,7 @@ from src.presentation.components.ai import ministry_ai_panel
 from src.presentation.components.common import (
     charts,
     metric_cards,
+    session_selector,
     tables,
 )
 from src.presentation.utils import formatters
@@ -65,18 +68,18 @@ def render() -> None:
 
     st.title("📊 Dashboard")
 
-    if not context.has_session():
+    if not context.has_session_collection():
         st.info(
-            "No session loaded.\n\n"
-            "Please load a WhatsApp session from the Home page."
+            "No sessions loaded.\n\n"
+            "Please import a WhatsApp chat from the Home page.",
         )
         return
 
-    session = context.current_session()
+    session = session_selector.render()
 
     if session is None:
         st.error(
-            "Unable to retrieve the active session.",
+            "Unable to retrieve the selected session.",
         )
         return
 
@@ -240,7 +243,7 @@ def render() -> None:
 
     metric_cards.render_section_header(
         "Session Overview",
-        "General information for the current session.",
+        "General information for the selected session.",
     )
 
     session_dataframe = formatters.session_summary(
@@ -287,7 +290,7 @@ def render() -> None:
                 f"Attendance Events: {session.attendance_count} | "
                 f"Done Events: {session.done_count} | "
                 f"Activity Events: {session.activity_count}"
-            )
+            ),
         )
 
     with right_column:

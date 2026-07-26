@@ -16,6 +16,7 @@ Coverage
 - Attendance event construction.
 - Done event construction.
 - Activity event construction.
+- Scripture Reading exclusion from activities.
 - Prayer session state handling.
 - Session aggregate construction.
 - Public builder utilities.
@@ -28,6 +29,15 @@ These tests verify application-layer orchestration.
 Domain business rules are not reimplemented here.
 The SessionBuilder is tested for correctly coordinating
 validated Message objects and Domain event models.
+
+Important Business Rule
+-----------------------
+SCRIPTURE READING is the session marker.
+
+The session-start marker is excluded from the extracted session
+messages and must never appear as an ActivityEvent. Scripture Reading
+is therefore not an activity category and must not be counted in
+activity analytics.
 
 Author
 ------
@@ -92,6 +102,9 @@ def session_start_message(
 ) -> Message:
     """
     Create a standard session-start message.
+
+    SCRIPTURE READING is the session marker and is not itself
+    part of the activity stream.
     """
 
     return make_message(
@@ -536,6 +549,9 @@ class TestSessionExtraction:
         """
         Once a session begins, later start markers remain in the
         extracted message stream according to current orchestration.
+
+        The later marker is retained as an attendance message but
+        is not converted into an ActivityEvent.
         """
 
         result = builder.build(
@@ -564,6 +580,12 @@ class TestSessionExtraction:
         )
 
         assert result.attendance_count == 2
+        assert result.activity_count == 1
+
+        assert all(
+            event.source_message.content != "SCRIPTURE READING"
+            for event in result.activity_events
+        )
 
 
 # ============================================================================
@@ -832,6 +854,9 @@ class TestDoneEvents:
 class TestActivityEvents:
     """
     Test ActivityEvent construction.
+
+    SCRIPTURE READING is deliberately excluded from activity analytics
+    because it is the session marker.
     """
 
     @pytest.mark.parametrize(
@@ -840,10 +865,6 @@ class TestActivityEvents:
             "expected_type",
         ),
         [
-            (
-                "Scripture Reading",
-                ActivityType.SCRIPTURE_READING,
-            ),
             (
                 "Insight",
                 ActivityType.INSIGHT,
@@ -870,7 +891,7 @@ class TestActivityEvents:
         expected_type: ActivityType,
     ) -> None:
         """
-        Supported activities are converted to ActivityEvents.
+        Supported activity messages are converted to ActivityEvents.
         """
 
         result = builder.build(
@@ -886,6 +907,32 @@ class TestActivityEvents:
         assert result.activity_count == 1
 
         assert result.activity_events[0].activity_type is expected_type
+
+    def test_scripture_reading_is_excluded_from_activities(
+        self,
+        builder: SessionBuilder,
+        session_date: date,
+    ) -> None:
+        """
+        SCRIPTURE READING is the session marker and is not an activity.
+        """
+
+        result = builder.build(
+            session_date=session_date,
+            messages=[
+                session_start_message(),
+                study_message(
+                    content="SCRIPTURE READING\nACTS 28:17-31",
+                ),
+            ],
+        )
+
+        assert result.activity_count == 0
+
+        assert all(
+            event.activity_type is not ActivityType.SCRIPTURE_READING
+            for event in result.activity_events
+        )
 
     def test_unclassified_message_is_handled_by_domain_policy(
         self,

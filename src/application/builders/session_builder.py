@@ -10,10 +10,12 @@ Builds immutable Session aggregates from validated Message objects.
 Responsibilities
 ----------------
 - Validate input messages.
-- Determine the active meeting session.
+- Detect multiple study sessions.
+- Determine session boundaries from Scripture Reading markers.
 - Construct AttendanceEvent objects.
 - Construct DoneEvent objects.
 - Construct ActivityEvent objects.
+- Exclude Scripture Reading announcements from participant activities.
 - Assemble immutable Session aggregates.
 
 Rules
@@ -26,11 +28,22 @@ Rules
 - No file I/O.
 - Technology independent.
 
-Notes
------
-- Operates exclusively on Domain models.
-- Acts as an orchestration layer.
-- Business rules remain inside the Domain layer.
+Session Detection Rule
+----------------------
+A new Daily Session begins when:
+
+1. A Scripture Reading marker is detected.
+2. The marker occurs at least 18 hours after the
+   previous Scripture Reading marker.
+
+The first Scripture Reading marker always begins
+the first detected session.
+
+The Scripture Reading marker itself is excluded from
+the resulting Session event collections.
+
+All messages after a session marker belong to that
+session until the next valid session marker.
 
 Author
 ------
@@ -47,13 +60,15 @@ from __future__ import annotations
 # Standard Library Imports
 # ============================================================================
 from collections.abc import Iterable
-from datetime import date
+from datetime import date, datetime, timedelta
 
 # ============================================================================
 # Local Imports
 # ============================================================================
 from src.domain.constants.keywords import (
+    CLOSING_PRAYER_KEYWORDS,
     DONE_KEYWORDS,
+    OPENING_PRAYER_KEYWORDS,
     SESSION_START_KEYWORDS,
 )
 from src.domain.enums.activity_type import ActivityType
@@ -67,38 +82,25 @@ from src.domain.policies.activity_policy import (
     is_supported_activity,
 )
 
+# ============================================================================
+# Constants
+# ============================================================================
+
+SESSION_MINIMUM_GAP = timedelta(hours=18)
+
+# ============================================================================
+# Session Builder
+# ============================================================================
+
 
 class SessionBuilder:
     """
     Build immutable Session aggregates from validated messages.
-
-    Workflow
-    --------
-
-        Messages
-            │
-            ▼
-      Validate & Sort
-            │
-            ▼
-     Detect Session Start
-            │
-            ▼
-      Session Messages
-            │
-       ┌────┼────────┐
-       ▼    ▼        ▼
-    Attendance Done Activities
-       │    │        │
-       └────┴────────┘
-            │
-            ▼
-         Session
     """
 
-    # ------------------------------------------------------------------
-    # Public Builder
-    # ------------------------------------------------------------------
+    # ========================================================================
+    # Public Builders
+    # ========================================================================
 
     def build(
         self,
@@ -106,7 +108,9 @@ class SessionBuilder:
         messages: Iterable[Message],
     ) -> Session:
         """
-        Build a Session aggregate.
+        Build one Session aggregate.
+
+        This preserves the existing single-session workflow.
         """
 
         ordered_messages = self._validate_messages(
@@ -117,16 +121,69 @@ class SessionBuilder:
             ordered_messages,
         )
 
+        return self._build_session(
+            session_date=session_date,
+            messages=session_messages,
+        )
+
+    def build_sessions(
+        self,
+        messages: Iterable[Message],
+    ) -> tuple[Session, ...]:
+        """
+        Detect and build all sessions from a message stream.
+
+        The first Scripture Reading marker starts the first session.
+
+        A subsequent Scripture Reading marker starts a new session
+        only when it occurs at least 18 hours after the previous
+        Scripture Reading marker.
+        """
+
+        ordered_messages = self._validate_messages(
+            messages,
+        )
+
+        session_groups = self._group_messages_into_sessions(
+            ordered_messages,
+        )
+
+        return tuple(
+            self._build_session(
+                session_date=session_messages[0].timestamp.date(),
+                messages=session_messages,
+            )
+            for session_messages in session_groups
+            if session_messages
+        )
+
+    # ========================================================================
+    # Session Construction
+    # ========================================================================
+
+    def _build_session(
+        self,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a Session from already-extracted session messages.
+        """
+
+        ordered_messages = self._validate_messages(
+            messages,
+        )
+
         attendance_events = self._build_attendance_events(
-            session_messages,
+            ordered_messages,
         )
 
         done_events = self._build_done_events(
-            session_messages,
+            ordered_messages,
         )
 
         activity_events = self._build_activity_events(
-            session_messages,
+            ordered_messages,
         )
 
         return Session(
@@ -136,9 +193,81 @@ class SessionBuilder:
             activity_events=activity_events,
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
+    # Multi-Session Detection
+    # ========================================================================
+
+    def _group_messages_into_sessions(
+        self,
+        messages: tuple[Message, ...],
+    ) -> tuple[tuple[Message, ...], ...]:
+        """
+        Group messages into multiple detected sessions.
+
+        Scripture Reading markers are boundaries and are excluded
+        from the resulting session message groups.
+        """
+
+        sessions: list[list[Message]] = []
+        current_session: list[Message] = []
+
+        previous_scripture_timestamp: datetime | None = None
+        session_started = False
+
+        for message in messages:
+
+            if self._is_session_start(message):
+
+                if not session_started:
+
+                    session_started = True
+
+                    previous_scripture_timestamp = (
+                        message.timestamp
+                    )
+
+                    continue
+
+                if (
+                    previous_scripture_timestamp is not None
+                    and (
+                        message.timestamp
+                        - previous_scripture_timestamp
+                    )
+                    >= SESSION_MINIMUM_GAP
+                ):
+
+                    if current_session:
+                        sessions.append(
+                            current_session,
+                        )
+
+                    current_session = []
+
+                    previous_scripture_timestamp = (
+                        message.timestamp
+                    )
+
+                    continue
+
+            if session_started:
+                current_session.append(
+                    message,
+                )
+
+        if current_session:
+            sessions.append(
+                current_session,
+            )
+
+        return tuple(
+            tuple(session)
+            for session in sessions
+        )
+
+    # ========================================================================
     # Attendance Construction
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _build_attendance_events(
         self,
@@ -146,26 +275,18 @@ class SessionBuilder:
     ) -> tuple[AttendanceEvent, ...]:
         """
         Build AttendanceEvent objects.
-
-        Every valid participant message represents participation.
         """
 
-        attendance_events: list[AttendanceEvent] = []
-
-        for message in messages:
-            attendance_events.append(
-                self._attendance_event(
-                    message,
-                )
-            )
-
         return tuple(
-            attendance_events,
+            self._attendance_event(
+                message,
+            )
+            for message in messages
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Done Construction
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _build_done_events(
         self,
@@ -173,42 +294,28 @@ class SessionBuilder:
     ) -> tuple[DoneEvent, ...]:
         """
         Build DoneEvent objects.
-
-        Multiple Done messages are preserved.
         """
 
-        done_events: list[DoneEvent] = []
-
-        for message in messages:
-
-            if not self._is_done_message(
-                message,
-            ):
-                continue
-
-            done_events.append(
-                self._done_event(
-                    message,
-                )
-            )
-
         return tuple(
-            done_events,
+            self._done_event(
+                message,
+            )
+            for message in messages
+            if self._is_done_message(
+                message,
+            )
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Activity Construction
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _build_activity_events(
         self,
         messages: tuple[Message, ...],
     ) -> tuple[ActivityEvent, ...]:
         """
-        Build ActivityEvent objects from session messages.
-
-        Every supported message is classified according to
-        the domain Activity Policy.
+        Build ActivityEvent objects.
         """
 
         activity_events: list[ActivityEvent] = []
@@ -216,6 +323,11 @@ class SessionBuilder:
         prayer_session_active = False
 
         for message in messages:
+
+            if self._is_session_start(
+                message,
+            ):
+                continue
 
             if not is_supported_activity(
                 message.content,
@@ -229,6 +341,9 @@ class SessionBuilder:
             )
 
             if activity_type is None:
+                continue
+
+            if activity_type is ActivityType.SCRIPTURE_READING:
                 continue
 
             activity_events.append(
@@ -252,9 +367,9 @@ class SessionBuilder:
             activity_events,
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Activity Classification
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _activity_type(
         self,
@@ -264,9 +379,6 @@ class SessionBuilder:
     ) -> ActivityType | None:
         """
         Determine the ActivityType represented by a message.
-
-        The domain Activity Policy is the authoritative source
-        for activity classification.
         """
 
         activity_name = classify_activity(
@@ -287,9 +399,9 @@ class SessionBuilder:
             activity_name,
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Prayer Session Boundaries
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _is_prayer_session_opening(
         self,
@@ -301,10 +413,9 @@ class SessionBuilder:
 
         normalized = message.content.strip().casefold()
 
-        return normalized.startswith(
-            "opening prayer",
-        ) or normalized.startswith(
-            "prayer session opens",
+        return any(
+            keyword.casefold() in normalized
+            for keyword in OPENING_PRAYER_KEYWORDS
         )
 
     def _is_prayer_session_closing(
@@ -317,21 +428,14 @@ class SessionBuilder:
 
         normalized = message.content.strip().casefold()
 
-        return (
-            normalized.startswith(
-                "closing prayer",
-            )
-            or normalized.startswith(
-                "closing prayers",
-            )
-            or normalized.startswith(
-                "prayer session closes",
-            )
+        return any(
+            keyword.casefold() in normalized
+            for keyword in CLOSING_PRAYER_KEYWORDS
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Keyword Helpers
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _is_done_message(
         self,
@@ -341,34 +445,38 @@ class SessionBuilder:
         Return True if the message is a Done acknowledgement.
         """
 
-        return message.is_single_word and message.lowercase_content in DONE_KEYWORDS
+        normalized = message.content.strip().casefold()
+
+        return normalized in {
+            keyword.casefold()
+            for keyword in DONE_KEYWORDS
+        }
 
     def _is_session_start(
         self,
         message: Message,
     ) -> bool:
         """
-        Return True if the message marks the beginning
-        of a study session.
+        Return True if the message is a Scripture Reading marker.
         """
 
+        normalized = message.content.strip().casefold()
+
         return any(
-            message.contains(
-                keyword,
-            )
+            keyword.casefold() in normalized
             for keyword in SESSION_START_KEYWORDS
         )
 
-    # ------------------------------------------------------------------
-    # Validation Helpers
-    # ------------------------------------------------------------------
+    # ========================================================================
+    # Validation
+    # ========================================================================
 
     def _validate_messages(
         self,
         messages: Iterable[Message],
     ) -> tuple[Message, ...]:
         """
-        Validate and chronologically sort supplied messages.
+        Validate and chronologically sort messages.
         """
 
         validated = tuple(
@@ -392,19 +500,16 @@ class SessionBuilder:
             )
         )
 
-    # ------------------------------------------------------------------
-    # Session Extraction
-    # ------------------------------------------------------------------
+    # ========================================================================
+    # Legacy Single-Session Extraction
+    # ========================================================================
 
     def _session_messages(
         self,
         messages: tuple[Message, ...],
     ) -> tuple[Message, ...]:
         """
-        Extract messages belonging to the study session.
-
-        Messages before the first configured session-start
-        marker are ignored.
+        Extract messages after the first session marker.
         """
 
         session_started = False
@@ -429,16 +534,16 @@ class SessionBuilder:
             session_messages,
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Event Factories
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def _attendance_event(
         self,
         message: Message,
     ) -> AttendanceEvent:
         """
-        Create an AttendanceEvent from a Message.
+        Create an AttendanceEvent.
         """
 
         return AttendanceEvent(
@@ -451,7 +556,7 @@ class SessionBuilder:
         message: Message,
     ) -> DoneEvent:
         """
-        Create a DoneEvent from a Message.
+        Create a DoneEvent.
         """
 
         return DoneEvent(
@@ -465,7 +570,7 @@ class SessionBuilder:
         activity_type: ActivityType,
     ) -> ActivityEvent:
         """
-        Create an ActivityEvent from a Message.
+        Create an ActivityEvent.
         """
 
         return ActivityEvent(
@@ -473,9 +578,9 @@ class SessionBuilder:
             source_message=message,
         )
 
-    # ------------------------------------------------------------------
+    # ========================================================================
     # Public Builder Utilities
-    # ------------------------------------------------------------------
+    # ========================================================================
 
     def build_attendance_events(
         self,
@@ -537,26 +642,36 @@ class SessionBuilder:
             session_messages,
         )
 
-    # ------------------------------------------------------------------
-    # Builder Metadata
-    # ------------------------------------------------------------------
+    # ========================================================================
+    # Metadata
+    # ========================================================================
 
     @property
-    def name(self) -> str:
+    def name(
+        self,
+    ) -> str:
         """
         Return the builder name.
         """
 
         return self.__class__.__name__
 
-    def __repr__(self) -> str:
+    # ========================================================================
+    # Dunder Methods
+    # ========================================================================
+
+    def __repr__(
+        self,
+    ) -> str:
         """
         Return the official representation.
         """
 
         return f"{self.__class__.__name__}()"
 
-    def __str__(self) -> str:
+    def __str__(
+        self,
+    ) -> str:
         """
         Return a human-readable representation.
         """

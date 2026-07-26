@@ -5,11 +5,12 @@ Activity Page
 
 Purpose
 -------
-Displays activity analytics for the active ministry session.
+Displays activity analytics for the selected ministry session.
 
 Responsibilities
 ----------------
 - Coordinate activity presentation workflows.
+- Consume the selected Session through the shared Session Selector.
 - Display activity KPIs.
 - Display activity distribution.
 - Display session activity summary.
@@ -45,6 +46,7 @@ from src.presentation.components import (
     metric_cards,
     tables,
 )
+from src.presentation.components.common import session_selector
 from src.presentation.utils import formatters
 
 # ============================================================================
@@ -61,18 +63,18 @@ def render() -> None:
 
     st.title("📈 Activity")
 
-    if not context.has_session():
+    if not context.has_session_collection():
         st.info(
-            "No session loaded.\n\n"
-            "Please load a WhatsApp session from the Home page."
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
         )
         return
 
-    session = context.current_session()
+    session = session_selector.render()
 
     if session is None:
-        st.error(
-            "Unable to retrieve the active session.",
+        st.info(
+            "No session is currently selected.",
         )
         return
 
@@ -233,7 +235,7 @@ def render() -> None:
                 f"Session Date: {session.session_date} | "
                 f"Activities: {session.activity_count} | "
                 f"Done Events: {session.done_count}"
-            )
+            ),
         )
 
     with right_column:
