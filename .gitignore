@@ -6,32 +6,27 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
-
 # Distribution
 build/
 dist/
 *.egg-info/
-
 # IDE
 .vscode/
 .idea/
-
 # OS files
 .DS_Store
 Thumbs.db
-
 # Environment variables
 .env
-
 # Streamlit cache
 .streamlit/
-
 # Test cache
 .pytest_cache/
-
 # Jupyter
 .ipynb_checkpoints/
-
 # Local data
 data/raw/
 data/processed/
+# Local CP019 audit/backup files
+CP019a_CURRENT_FILES.txt
+cp019a_backup_20260818_174359/
