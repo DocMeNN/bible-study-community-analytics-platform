@@ -1,46 +1,10 @@
-# src/presentation/pages/activity_page.py
+﻿from __future__ import annotations
 
-"""
-Activity Page
-
-Purpose
--------
-Displays activity analytics for the selected ministry session.
-
-Responsibilities
-----------------
-- Coordinate activity presentation workflows.
-- Consume the globally selected Session through Presentation Context.
-- Display activity KPIs.
-- Display activity distribution.
-- Display session activity summary.
-- Delegate activity workflows to ActivityViewModel.
-
-Architectural Rules
--------------------
-- Presentation only.
-- No business logic.
-- No analytics calculations.
-- No infrastructure access.
-- Do not render the unified session selector locally.
-"""
-
-from __future__ import annotations
-
-# ============================================================================
-# Standard Library Imports
-# ============================================================================
 from collections import Counter
 from typing import Any, cast
 
-# ============================================================================
-# Third-Party Imports
-# ============================================================================
 import streamlit as st
 
-# ============================================================================
-# Local Imports
-# ============================================================================
 from src.presentation import context
 from src.presentation.components.common import (
     charts,
@@ -49,52 +13,61 @@ from src.presentation.components.common import (
 )
 from src.presentation.utils import formatters
 
-# ============================================================================
-# Activity Page
-# ============================================================================
-
 
 def render() -> None:
-    """
-    Render the Activity page.
-    """
-
     context.initialize()
 
-    st.title("📈 Activity")
+    st.title("?? Activity")
 
     if not context.has_session_collection():
         st.info(
             "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
         )
-
         return
 
-    session = context.current_session()
+    scope = context.ensure_presentation_scope()
 
-    if session is None:
-        st.info(
-            "No session is currently selected.",
-        )
-
+    if scope is None:
+        st.error("Unable to establish the active Presentation Scope.")
         return
-
-    activity_viewmodel = context.activity_viewmodel()
-
-    activity = activity_viewmodel.activity_data(
-        session=session,
-    )
 
     dashboard_viewmodel = context.dashboard_viewmodel()
 
-    summary = dashboard_viewmodel.dashboard_summary(
-        session=session,
-        expected_attendees=(context.expected_attendees()),
+    scope_data = dashboard_viewmodel.scope_dashboard_data(
+        sessions=context.scope_sessions(),
+        expected_attendees=context.expected_attendees(),
     )
 
-    # =========================================================================
-    # Typed Values
-    # =========================================================================
+    session = scope_data["scope_session"]
+    summary = cast(
+        dict[str, Any],
+        scope_data["dashboard"],
+    )
+    activity = cast(
+        dict[str, Any],
+        scope_data["activity"],
+    )
+
+    scope_label = scope.period.value.capitalize()
+
+    metric_cards.render_section_header(
+        "Presentation Scope",
+        (
+            f"{scope_label} activity scope: "
+            f"{scope.start_date} ? {scope.end_date} "
+            f"({scope.session_count} Daily Session(s))."
+        ),
+    )
+
+    st.caption(
+        (
+            f"Active scope: {scope_label} | "
+            f"{scope.start_date} ? {scope.end_date} | "
+            f"{scope.session_count} Daily Session(s)"
+        ),
+    )
+
+    st.divider()
 
     activity_count = cast(
         int,
@@ -116,13 +89,9 @@ def render() -> None:
         summary["attendance_rate"],
     )
 
-    # =========================================================================
-    # Activity Overview
-    # =========================================================================
-
     metric_cards.render_section_header(
         "Activity Overview",
-        "Activity statistics for the current session.",
+        f"Activity statistics for the active {scope_label.lower()} scope.",
     )
 
     metric_cards.render_metric_row(
@@ -158,13 +127,12 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Activity Distribution
-    # =========================================================================
-
     metric_cards.render_section_header(
         "Activity Distribution",
-        "Distribution of recorded activities.",
+        (
+            f"Distribution of recorded activities for the active "
+            f"{scope_label.lower()} scope."
+        ),
     )
 
     activity_counts = cast(
@@ -180,7 +148,7 @@ def render() -> None:
         activity_dataframe,
         x="Category",
         y="Count",
-        title="Activity Distribution",
+        title=f"{scope_label} Activity Distribution",
     )
 
     tables.render_dataframe(
@@ -189,13 +157,12 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Session Summary
-    # =========================================================================
-
     metric_cards.render_section_header(
-        "Session Activity",
-        "General activity information for this meeting.",
+        "Scope Activity",
+        (
+            f"Aggregated activity information for the active "
+            f"{scope_label.lower()} scope."
+        ),
     )
 
     tables.render_dataframe(
@@ -206,13 +173,9 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Session Highlights
-    # =========================================================================
-
     metric_cards.render_section_header(
-        "Session Highlights",
-        "Important milestones during the session.",
+        "Scope Highlights",
+        f"Important milestones during the active {scope_label.lower()} scope.",
     )
 
     tables.render_table(
@@ -224,10 +187,6 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Footer
-    # =========================================================================
-
     left_column, right_column = st.columns(
         [3, 1],
     )
@@ -235,7 +194,9 @@ def render() -> None:
     with left_column:
         st.caption(
             (
-                f"Session Date: {session.session_date} | "
+                f"Scope: {scope_label} | "
+                f"{scope.start_date} ? {scope.end_date} | "
+                f"Daily Sessions: {scope.session_count} | "
                 f"Activities: {session.activity_count} | "
                 f"Done Events: {session.done_count}"
             ),
@@ -243,7 +204,8 @@ def render() -> None:
 
     with right_column:
         if st.button(
-            "🔄 Refresh",
+            "?? Refresh",
             use_container_width=True,
         ):
             st.rerun()
+

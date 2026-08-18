@@ -1,78 +1,23 @@
-# src/presentation/context.py
+﻿from __future__ import annotations
 
-"""
-Presentation Context
-
-Purpose
--------
-Provides the centralized Presentation state manager for the application.
-
-Responsibilities
-----------------
-- Manage Streamlit session state.
-- Store the active SessionCollection.
-- Store the active PresentationScope.
-- Store presentation grouping configuration.
-- Store the selected Daily Session.
-- Compose Presentation-layer services.
-- Provide shared ViewModels and Controllers.
-
-Architectural Rules
--------------------
-- No business logic.
-- No analytics.
-- No parsing.
-- No Infrastructure access outside object composition.
-- No Domain calculations.
-
-ADR-003
--------
-The Presentation layer maintains exactly one active
-PresentationScope.
-"""
-
-from __future__ import annotations
-
-# ============================================================================
-# Standard Library Imports
-# ============================================================================
 from datetime import date
 from typing import Final, cast
 
-# ============================================================================
-# Third-Party Imports
-# ============================================================================
 import streamlit as st
 
-# ============================================================================
-# Application Services
-# ============================================================================
 from src.application.services.activity_service import ActivityService
 from src.application.services.ai_service import AIService
 from src.application.services.attendance_service import AttendanceService
 from src.application.services.dashboard_service import DashboardService
 from src.application.services.import_service import ImportService
+from src.application.services.multi_session_analytics_service import (
+    MultiSessionAnalyticsService,
+)
 from src.application.services.report_service import ReportService
-
-# ============================================================================
-# Configuration
-# ============================================================================
 from src.config.ai_config import load_ai_config
-
-# ============================================================================
-# Domain Models
-# ============================================================================
 from src.domain.models.session import Session
 from src.domain.models.session_collection import SessionCollection
-
-# ============================================================================
-# Presentation Controllers
-# ============================================================================
 from src.presentation.controllers.ai_controller import AIController
-
-# ============================================================================
-# Presentation Grouping
-# ============================================================================
 from src.presentation.grouping.daily_grouping_strategy import (
     DailyGroupingStrategy,
 )
@@ -85,9 +30,7 @@ from src.presentation.grouping.grouping_configuration import (
 from src.presentation.grouping.grouping_strategy import (
     GroupingStrategy,
 )
-from src.presentation.grouping.grouping_types import (
-    GroupingPeriod,
-)
+from src.presentation.grouping.grouping_types import GroupingPeriod
 from src.presentation.grouping.monthly_grouping_strategy import (
     MonthlyGroupingStrategy,
 )
@@ -103,39 +46,15 @@ from src.presentation.grouping.weekly_grouping_strategy import (
 from src.presentation.grouping.yearly_grouping_strategy import (
     YearlyGroupingStrategy,
 )
-
-# ============================================================================
-# Presentation Models
-# ============================================================================
-from src.presentation.models.presentation_scope import (
-    PresentationScope,
-)
-from src.presentation.models.session_group import (
-    SessionGroup,
-)
-
-# ============================================================================
-# Presentation ViewModels
-# ============================================================================
-from src.presentation.viewmodels.activity_viewmodel import (
-    ActivityViewModel,
-)
-from src.presentation.viewmodels.ai_viewmodel import (
-    AIViewModel,
-)
+from src.presentation.models.presentation_scope import PresentationScope
+from src.presentation.models.session_group import SessionGroup
+from src.presentation.viewmodels.activity_viewmodel import ActivityViewModel
+from src.presentation.viewmodels.ai_viewmodel import AIViewModel
 from src.presentation.viewmodels.attendance_viewmodel import (
     AttendanceViewModel,
 )
-from src.presentation.viewmodels.dashboard_viewmodel import (
-    DashboardViewModel,
-)
-from src.presentation.viewmodels.report_viewmodel import (
-    ReportViewModel,
-)
-
-# ============================================================================
-# Session State Keys
-# ============================================================================
+from src.presentation.viewmodels.dashboard_viewmodel import DashboardViewModel
+from src.presentation.viewmodels.report_viewmodel import ReportViewModel
 
 _SESSION_COLLECTION_KEY: Final = "session_collection"
 _SELECTED_SESSION_DATE_KEY: Final = "selected_session_date"
@@ -151,6 +70,9 @@ _ACTIVITY_SERVICE_KEY: Final = "activity_service"
 _DASHBOARD_SERVICE_KEY: Final = "dashboard_service"
 _REPORT_SERVICE_KEY: Final = "report_service"
 _IMPORT_SERVICE_KEY: Final = "import_service"
+_MULTI_SESSION_ANALYTICS_SERVICE_KEY: Final = (
+    "multi_session_analytics_service"
+)
 
 _AI_SERVICE_KEY: Final = "ai_service"
 _AI_CONTROLLER_KEY: Final = "ai_controller"
@@ -161,26 +83,12 @@ _ACTIVITY_VIEWMODEL_KEY: Final = "activity_viewmodel"
 _DASHBOARD_VIEWMODEL_KEY: Final = "dashboard_viewmodel"
 _REPORT_VIEWMODEL_KEY: Final = "report_viewmodel"
 
-# ============================================================================
-# Internal Builders
-# ============================================================================
-
 
 def _build_grouping_strategy(
     configuration: GroupingConfiguration,
 ) -> GroupingStrategy:
-    """
-    Build the Presentation grouping strategy.
-    """
-
     period = configuration.period
 
-    #
-    # IMPORTANT
-    #
-    # Normalize values that may have been restored by
-    # Streamlit Session State as plain strings.
-    #
     if isinstance(period, str):
         period = GroupingPeriod(period)
 
@@ -212,87 +120,37 @@ def _build_grouping_strategy(
 def _build_grouping_service(
     configuration: GroupingConfiguration,
 ) -> SessionGroupingService:
-    """
-    Build the SessionGroupingService.
-    """
-
     period = configuration.period
 
-    #
-    # Normalize restored enum values.
-    #
     if isinstance(period, str):
         period = GroupingPeriod(period)
 
     return SessionGroupingService(
-        strategy=_build_grouping_strategy(
-            configuration,
-        ),
+        strategy=_build_grouping_strategy(configuration),
         period=period,
     )
 
 
-# ============================================================================
-# Initialization
-# ============================================================================
-
-
 def initialize() -> None:
-    """
-    Initialize the Presentation Context.
-
-    Safe to call multiple times.
-    """
-
     state = st.session_state
 
-    # ------------------------------------------------------------------------
-    # Core Presentation State
-    # ------------------------------------------------------------------------
+    state.setdefault(_SESSION_COLLECTION_KEY, None)
+    state.setdefault(_SELECTED_SESSION_DATE_KEY, None)
+    state.setdefault(_ACTIVE_PRESENTATION_SCOPE_KEY, None)
+    state.setdefault(_EXPECTED_ATTENDEES_KEY, 0)
 
-    state.setdefault(
-        _SESSION_COLLECTION_KEY,
-        None,
-    )
-
-    state.setdefault(
-        _SELECTED_SESSION_DATE_KEY,
-        None,
-    )
-
-    state.setdefault(
-        _ACTIVE_PRESENTATION_SCOPE_KEY,
-        None,
-    )
-
-    state.setdefault(
-        _EXPECTED_ATTENDEES_KEY,
-        0,
-    )
-
-    # ------------------------------------------------------------------------
-    # Grouping Configuration
-    # ------------------------------------------------------------------------
-
-    configuration = state.get(
-        _GROUPING_CONFIGURATION_KEY,
-    )
+    configuration = state.get(_GROUPING_CONFIGURATION_KEY)
 
     if not isinstance(
         configuration,
         GroupingConfiguration,
     ):
         configuration = GroupingConfiguration.weekly()
-
         state[_GROUPING_CONFIGURATION_KEY] = configuration
 
     state[_GROUPING_SERVICE_KEY] = _build_grouping_service(
         configuration,
     )
-
-    # ------------------------------------------------------------------------
-    # Application Services
-    # ------------------------------------------------------------------------
 
     state.setdefault(
         _ATTENDANCE_SERVICE_KEY,
@@ -316,6 +174,11 @@ def initialize() -> None:
                 state[_ACTIVITY_SERVICE_KEY],
             ),
         ),
+    )
+
+    state.setdefault(
+        _MULTI_SESSION_ANALYTICS_SERVICE_KEY,
+        MultiSessionAnalyticsService(),
     )
 
     state.setdefault(
@@ -358,10 +221,6 @@ def initialize() -> None:
         ),
     )
 
-    # ------------------------------------------------------------------------
-    # ViewModels
-    # ------------------------------------------------------------------------
-
     state.setdefault(
         _AI_VIEWMODEL_KEY,
         AIViewModel(
@@ -399,6 +258,10 @@ def initialize() -> None:
                 DashboardService,
                 state[_DASHBOARD_SERVICE_KEY],
             ),
+            multi_session_analytics_service=cast(
+                MultiSessionAnalyticsService,
+                state[_MULTI_SESSION_ANALYTICS_SERVICE_KEY],
+            ),
         ),
     )
 
@@ -413,18 +276,9 @@ def initialize() -> None:
     )
 
 
-# ============================================================================
-# Session Collection
-# ============================================================================
-
-
 def set_session_collection(
     session_collection: SessionCollection,
 ) -> None:
-    """
-    Store the active SessionCollection.
-    """
-
     st.session_state[_SESSION_COLLECTION_KEY] = session_collection
 
     if session_collection.has_sessions:
@@ -434,18 +288,12 @@ def set_session_collection(
             set_selected_session(
                 first_session.session_date,
             )
-
     else:
         st.session_state[_SELECTED_SESSION_DATE_KEY] = None
-
         st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY] = None
 
 
 def current_session_collection() -> SessionCollection | None:
-    """
-    Return the active SessionCollection.
-    """
-
     return cast(
         SessionCollection | None,
         st.session_state[_SESSION_COLLECTION_KEY],
@@ -453,35 +301,16 @@ def current_session_collection() -> SessionCollection | None:
 
 
 def has_session_collection() -> bool:
-    """
-    Return True when a SessionCollection exists.
-    """
-
     return current_session_collection() is not None
 
 
 def clear_session_collection() -> None:
-    """
-    Clear the active SessionCollection.
-    """
-
     st.session_state[_SESSION_COLLECTION_KEY] = None
-
     st.session_state[_SELECTED_SESSION_DATE_KEY] = None
-
     st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY] = None
 
 
-# ============================================================================
-# Grouping Configuration
-# ============================================================================
-
-
 def grouping_service() -> SessionGroupingService:
-    """
-    Return the active grouping service.
-    """
-
     return cast(
         SessionGroupingService,
         st.session_state[_GROUPING_SERVICE_KEY],
@@ -489,10 +318,6 @@ def grouping_service() -> SessionGroupingService:
 
 
 def grouping_configuration() -> GroupingConfiguration:
-    """
-    Return the active grouping configuration.
-    """
-
     return cast(
         GroupingConfiguration,
         st.session_state[_GROUPING_CONFIGURATION_KEY],
@@ -502,10 +327,6 @@ def grouping_configuration() -> GroupingConfiguration:
 def set_grouping_configuration(
     configuration: GroupingConfiguration,
 ) -> None:
-    """
-    Replace the active grouping configuration.
-    """
-
     if not isinstance(
         configuration,
         GroupingConfiguration,
@@ -522,18 +343,23 @@ def set_grouping_configuration(
 
     st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY] = None
 
+    selected_date = selected_session_date()
 
-# ============================================================================
-# Grouped Sessions
-# ============================================================================
+    if selected_date is not None:
+        session_collection = current_session_collection()
+
+        if session_collection is not None:
+            session = session_collection.get_session(
+                selected_date,
+            )
+
+            if session is not None:
+                set_selected_session(
+                    selected_date,
+                )
 
 
 def grouped_sessions() -> tuple[SessionGroup, ...]:
-    """
-    Return the grouped SessionGroups for the active
-    Presentation configuration.
-    """
-
     session_collection = current_session_collection()
 
     if session_collection is None:
@@ -544,20 +370,9 @@ def grouped_sessions() -> tuple[SessionGroup, ...]:
     )
 
 
-# ============================================================================
-# Presentation Scope
-# ============================================================================
-
-
 def set_selected_session(
     session_date: date,
 ) -> None:
-    """
-    Select the active Daily Session.
-
-    The PresentationScope is rebuilt automatically.
-    """
-
     session_collection = current_session_collection()
 
     if session_collection is None:
@@ -579,18 +394,12 @@ def set_selected_session(
     selected_group = None
 
     for group in grouped_sessions():
-        if (
-            group.get_session(
-                session_date,
-            )
-            is not None
-        ):
+        if group.get_session(session_date) is not None:
             selected_group = group
             break
 
     if selected_group is None:
         st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY] = None
-
         return
 
     st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY] = PresentationScope(
@@ -601,10 +410,6 @@ def set_selected_session(
 
 
 def selected_session_date() -> date | None:
-    """
-    Return the selected Daily Session date.
-    """
-
     return cast(
         date | None,
         st.session_state[_SELECTED_SESSION_DATE_KEY],
@@ -612,10 +417,6 @@ def selected_session_date() -> date | None:
 
 
 def current_session() -> Session | None:
-    """
-    Return the selected Daily Session.
-    """
-
     session_collection = current_session_collection()
 
     if session_collection is None:
@@ -632,17 +433,32 @@ def current_session() -> Session | None:
 
 
 def has_selected_session() -> bool:
-    """
-    Return True when a Daily Session is selected.
-    """
-
     return current_session() is not None
 
 
 def presentation_scope() -> PresentationScope | None:
-    """
-    Return the active PresentationScope.
-    """
+    scope = cast(
+        PresentationScope | None,
+        st.session_state[_ACTIVE_PRESENTATION_SCOPE_KEY],
+    )
+
+    if scope is not None:
+        return scope
+
+    selected_date = selected_session_date()
+
+    if selected_date is not None:
+        session_collection = current_session_collection()
+
+        if session_collection is not None:
+            session = session_collection.get_session(
+                selected_date,
+            )
+
+            if session is not None:
+                set_selected_session(
+                    selected_date,
+                )
 
     return cast(
         PresentationScope | None,
@@ -650,42 +466,47 @@ def presentation_scope() -> PresentationScope | None:
     )
 
 
-# ============================================================================
-# Presentation Configuration
-# ============================================================================
+def ensure_presentation_scope() -> PresentationScope | None:
+    return presentation_scope()
+
+
+def scope_sessions() -> tuple[Session, ...]:
+    scope = ensure_presentation_scope()
+
+    if scope is not None:
+        return scope.sessions
+
+    session = current_session()
+
+    if session is None:
+        return ()
+
+    return (session,)
+
+
+def is_multi_session_scope() -> bool:
+    scope = ensure_presentation_scope()
+
+    return (
+        scope is not None
+        and scope.session_count > 1
+    )
 
 
 def set_expected_attendees(
     value: int,
 ) -> None:
-    """
-    Store the expected attendee count.
-    """
-
     st.session_state[_EXPECTED_ATTENDEES_KEY] = value
 
 
 def expected_attendees() -> int:
-    """
-    Return the configured expected attendee count.
-    """
-
     return cast(
         int,
         st.session_state[_EXPECTED_ATTENDEES_KEY],
     )
 
 
-# ============================================================================
-# Shared Services
-# ============================================================================
-
-
 def attendance_service() -> AttendanceService:
-    """
-    Return the shared AttendanceService.
-    """
-
     return cast(
         AttendanceService,
         st.session_state[_ATTENDANCE_SERVICE_KEY],
@@ -693,10 +514,6 @@ def attendance_service() -> AttendanceService:
 
 
 def activity_service() -> ActivityService:
-    """
-    Return the shared ActivityService.
-    """
-
     return cast(
         ActivityService,
         st.session_state[_ACTIVITY_SERVICE_KEY],
@@ -704,10 +521,6 @@ def activity_service() -> ActivityService:
 
 
 def dashboard_service() -> DashboardService:
-    """
-    Return the shared DashboardService.
-    """
-
     return cast(
         DashboardService,
         st.session_state[_DASHBOARD_SERVICE_KEY],
@@ -715,26 +528,13 @@ def dashboard_service() -> DashboardService:
 
 
 def report_service() -> ReportService:
-    """
-    Return the shared ReportService.
-    """
-
     return cast(
         ReportService,
         st.session_state[_REPORT_SERVICE_KEY],
     )
 
 
-# ============================================================================
-# Remaining Shared Services
-# ============================================================================
-
-
 def import_service() -> ImportService:
-    """
-    Return the shared ImportService.
-    """
-
     return cast(
         ImportService,
         st.session_state[_IMPORT_SERVICE_KEY],
@@ -742,10 +542,6 @@ def import_service() -> ImportService:
 
 
 def ai_service() -> AIService:
-    """
-    Return the shared AIService.
-    """
-
     return cast(
         AIService,
         st.session_state[_AI_SERVICE_KEY],
@@ -753,26 +549,13 @@ def ai_service() -> AIService:
 
 
 def ai_controller() -> AIController:
-    """
-    Return the shared AIController.
-    """
-
     return cast(
         AIController,
         st.session_state[_AI_CONTROLLER_KEY],
     )
 
 
-# ============================================================================
-# ViewModels
-# ============================================================================
-
-
 def ai_viewmodel() -> AIViewModel:
-    """
-    Return the shared AIViewModel.
-    """
-
     return cast(
         AIViewModel,
         st.session_state[_AI_VIEWMODEL_KEY],
@@ -780,10 +563,6 @@ def ai_viewmodel() -> AIViewModel:
 
 
 def attendance_viewmodel() -> AttendanceViewModel:
-    """
-    Return the shared AttendanceViewModel.
-    """
-
     return cast(
         AttendanceViewModel,
         st.session_state[_ATTENDANCE_VIEWMODEL_KEY],
@@ -791,10 +570,6 @@ def attendance_viewmodel() -> AttendanceViewModel:
 
 
 def activity_viewmodel() -> ActivityViewModel:
-    """
-    Return the shared ActivityViewModel.
-    """
-
     return cast(
         ActivityViewModel,
         st.session_state[_ACTIVITY_VIEWMODEL_KEY],
@@ -802,10 +577,6 @@ def activity_viewmodel() -> ActivityViewModel:
 
 
 def dashboard_viewmodel() -> DashboardViewModel:
-    """
-    Return the shared DashboardViewModel.
-    """
-
     return cast(
         DashboardViewModel,
         st.session_state[_DASHBOARD_VIEWMODEL_KEY],
@@ -813,44 +584,32 @@ def dashboard_viewmodel() -> DashboardViewModel:
 
 
 def report_viewmodel() -> ReportViewModel:
-    """
-    Return the shared ReportViewModel.
-    """
-
     return cast(
         ReportViewModel,
         st.session_state[_REPORT_VIEWMODEL_KEY],
     )
 
 
-# ============================================================================
-# Public Exports
-# ============================================================================
-
 __all__ = [
-    # Initialization
     "initialize",
-    # Session Collection
     "set_session_collection",
     "current_session_collection",
     "has_session_collection",
     "clear_session_collection",
-    # Grouping
     "grouping_configuration",
     "grouping_service",
     "set_grouping_configuration",
     "grouped_sessions",
-    # Session Selection
     "set_selected_session",
     "selected_session_date",
     "current_session",
     "has_selected_session",
-    # Presentation Scope
     "presentation_scope",
-    # Configuration
+    "ensure_presentation_scope",
+    "scope_sessions",
+    "is_multi_session_scope",
     "set_expected_attendees",
     "expected_attendees",
-    # Services
     "attendance_service",
     "activity_service",
     "dashboard_service",
@@ -858,7 +617,6 @@ __all__ = [
     "import_service",
     "ai_service",
     "ai_controller",
-    # ViewModels
     "ai_viewmodel",
     "attendance_viewmodel",
     "activity_viewmodel",

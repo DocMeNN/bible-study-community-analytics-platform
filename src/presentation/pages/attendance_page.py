@@ -1,48 +1,7 @@
-# src/presentation/pages/attendance_page.py
+﻿from __future__ import annotations
 
-"""
-Attendance Page
-
-Purpose
--------
-Displays attendance analytics for the selected ministry session.
-
-Responsibilities
-----------------
-- Coordinate the AttendanceViewModel.
-- Consume the globally selected Session through Presentation Context.
-- Display attendance session summary.
-- Coordinate attendance presentation components.
-- Display the attendance page footer.
-
-Architectural Rules
--------------------
-- Presentation only.
-- No business logic.
-- No analytics calculations.
-- No direct Application Service orchestration.
-- Consume Application results through the Presentation ViewModel.
-- Do not render the session selector locally.
-
-Session Selection
------------------
-The unified session selector is rendered once by the application shell.
-
-This page consumes the selected Session through:
-
-    context.current_session()
-"""
-
-from __future__ import annotations
-
-# ============================================================================
-# Third-Party Imports
-# ============================================================================
 import streamlit as st
 
-# ============================================================================
-# Local Imports
-# ============================================================================
 from src.presentation import context
 from src.presentation.components.attendance import (
     distribution,
@@ -54,16 +13,8 @@ from src.presentation.components.common import (
 )
 from src.presentation.utils import formatters
 
-# ============================================================================
-# Attendance Page
-# ============================================================================
-
 
 def render() -> None:
-    """
-    Render the Attendance page.
-    """
-
     context.initialize()
 
     st.title("👥 Attendance")
@@ -72,28 +23,44 @@ def render() -> None:
         st.info(
             "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
         )
-
         return
 
-    session = context.current_session()
+    scope = context.ensure_presentation_scope()
 
-    if session is None:
-        st.info(
-            "No session is currently selected.",
-        )
-
+    if scope is None:
+        st.error("Unable to establish the active Presentation Scope.")
         return
 
-    attendance_viewmodel = context.attendance_viewmodel()
+    dashboard_viewmodel = context.dashboard_viewmodel()
 
-    attendance = attendance_viewmodel.attendance_data(
-        session=session,
-        expected_attendees=(context.expected_attendees()),
+    scope_data = dashboard_viewmodel.scope_dashboard_data(
+        sessions=context.scope_sessions(),
+        expected_attendees=context.expected_attendees(),
     )
 
-    # =========================================================================
-    # Attendance Overview
-    # =========================================================================
+    session = scope_data["scope_session"]
+    attendance = scope_data["attendance"]
+
+    scope_label = scope.period.value.capitalize()
+
+    metric_cards.render_section_header(
+        "Presentation Scope",
+        (
+            f"{scope_label} attendance scope: "
+            f"{scope.start_date} → {scope.end_date} "
+            f"({scope.session_count} Daily Session(s))."
+        ),
+    )
+
+    st.caption(
+        (
+            f"Active scope: {scope_label} | "
+            f"{scope.start_date} → {scope.end_date} | "
+            f"{scope.session_count} Daily Session(s)"
+        ),
+    )
+
+    st.divider()
 
     overview.render(
         attendance,
@@ -101,23 +68,18 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Attendance Distribution
-    # =========================================================================
-
     distribution.render(
         attendance,
     )
 
     st.divider()
 
-    # =========================================================================
-    # Session Summary
-    # =========================================================================
-
     metric_cards.render_section_header(
-        "Session Attendance",
-        "Attendance information for this meeting.",
+        "Scope Attendance",
+        (
+            f"Aggregated attendance information for the active "
+            f"{scope_label.lower()} scope."
+        ),
     )
 
     tables.render_dataframe(
@@ -128,10 +90,6 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Footer
-    # =========================================================================
-
     left_column, right_column = st.columns(
         [3, 1],
     )
@@ -139,9 +97,11 @@ def render() -> None:
     with left_column:
         st.caption(
             (
-                f"Session Date: {session.session_date} | "
+                f"Scope: {scope_label} | "
+                f"{scope.start_date} → {scope.end_date} | "
+                f"Daily Sessions: {scope.session_count} | "
                 f"Expected: {context.expected_attendees()} | "
-                f"Present: {session.attendee_count}"
+                f"Unique Participants: {session.attendee_count}"
             ),
         )
 

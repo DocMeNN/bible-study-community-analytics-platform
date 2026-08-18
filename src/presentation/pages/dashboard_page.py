@@ -1,48 +1,10 @@
-# src/presentation/pages/dashboard_page.py
+﻿from __future__ import annotations
 
-"""
-Dashboard Page
-
-Purpose
--------
-Displays the primary dashboard for a selected study session.
-
-Responsibilities
-----------------
-- Consume the globally selected Session through Presentation Context.
-- Display dashboard metrics.
-- Display attendance analytics.
-- Display activity analytics.
-- Display session overview.
-- Display AI-powered ministry insights.
-- Delegate application workflows to DashboardViewModel.
-- Delegate rendering to reusable presentation components.
-
-Architectural Rules
--------------------
-- Presentation only.
-- No business logic.
-- No analytics calculations.
-- No infrastructure access.
-- Do not render the unified session selector locally.
-"""
-
-from __future__ import annotations
-
-# ============================================================================
-# Standard Library Imports
-# ============================================================================
 from collections import Counter
 from typing import Any, cast
 
-# ============================================================================
-# Third-Party Imports
-# ============================================================================
 import streamlit as st
 
-# ============================================================================
-# Local Imports
-# ============================================================================
 from src.presentation import context
 from src.presentation.components.ai import ministry_ai_panel
 from src.presentation.components.common import (
@@ -52,16 +14,8 @@ from src.presentation.components.common import (
 )
 from src.presentation.utils import formatters
 
-# ============================================================================
-# Dashboard Page
-# ============================================================================
-
 
 def render() -> None:
-    """
-    Render the Dashboard page.
-    """
-
     context.initialize()
 
     st.title("📊 Dashboard")
@@ -70,26 +24,22 @@ def render() -> None:
         st.info(
             "No sessions loaded.\n\nPlease import a WhatsApp chat from the Home page.",
         )
-
         return
 
-    session = context.current_session()
+    scope = context.ensure_presentation_scope()
 
-    if session is None:
-        st.error(
-            "Unable to retrieve the selected session.",
-        )
-
+    if scope is None:
+        st.error("Unable to establish the active Presentation Scope.")
         return
 
     viewmodel = context.dashboard_viewmodel()
 
-    expected_attendees = context.expected_attendees()
-
-    dashboard_data = viewmodel.get_dashboard(
-        session=session,
-        expected_attendees=expected_attendees,
+    dashboard_data = viewmodel.scope_dashboard_data(
+        sessions=context.scope_sessions(),
+        expected_attendees=context.expected_attendees(),
     )
+
+    session = dashboard_data["scope_session"]
 
     summary = cast(
         dict[str, Any],
@@ -106,31 +56,42 @@ def render() -> None:
         dashboard_data["activity"],
     )
 
-    # ========================================================================
-    # Overview
-    # ========================================================================
+    scope_label = scope.period.value.capitalize()
 
     metric_cards.render_section_header(
-        "Overview",
-        "Key performance indicators for this session.",
+        "Presentation Scope",
+        (
+            f"{scope_label} scope: "
+            f"{scope.start_date} → {scope.end_date} "
+            f"({scope.session_count} Daily Session(s))."
+        ),
     )
 
-    metric_cards.render_metric_row(
-        formatters.dashboard_metrics(
-            summary,
+    st.caption(
+        (
+            f"Active scope: {scope_label} | "
+            f"{scope.start_date} → {scope.end_date} | "
+            f"{scope.session_count} Daily Session(s)"
         ),
     )
 
     st.divider()
 
-    # ========================================================================
-    # AI Ministry Intelligence
-    # ========================================================================
+    metric_cards.render_section_header(
+        "Overview",
+        f"Key performance indicators for the active {scope_label.lower()} scope.",
+    )
+
+    metric_cards.render_metric_row(
+        formatters.dashboard_metrics(summary),
+    )
+
+    st.divider()
 
     try:
         metric_cards.render_section_header(
             "AI Ministry Intelligence",
-            "Generate an AI-powered summary of the current meeting session.",
+            f"Generate AI intelligence for the active {scope_label.lower()} scope.",
         )
 
         ai_viewmodel = context.ai_viewmodel()
@@ -148,20 +109,24 @@ def render() -> None:
         )
 
         ministry_ai_panel.render(
-            title="Session Summary",
-            button_label="✨ Generate Session Summary",
-            callback=(context.ai_controller().generate_session_summary),
+            title="Scope Summary",
+            button_label="✨ Generate Scope Summary",
+            callback=context.ai_controller().generate_session_summary,
             callback_kwargs={
                 "session_information": session_information,
                 "attendance_summary": attendance_summary,
                 "activity_summary": activity_summary,
             },
-            result_key="dashboard_session_summary",
-            button_key="dashboard_generate_summary",
-            help_text=("Generate an AI summary of this ministry session."),
+            result_key="dashboard_scope_summary",
+            button_key="dashboard_generate_scope_summary",
+            help_text=(
+                f"Generate an AI summary of the active "
+                f"{scope_label.lower()} presentation scope."
+            ),
             empty_message=(
-                "Click 'Generate Session Summary' to create "
-                "an AI-powered overview of this meeting."
+                f"Click 'Generate Scope Summary' to create an "
+                f"AI-powered overview of the active "
+                f"{scope_label.lower()} scope."
             ),
         )
 
@@ -169,16 +134,11 @@ def render() -> None:
         st.error(
             "Unable to load the AI Ministry Intelligence panel.",
         )
-
         st.exception(exc)
-
-    # ========================================================================
-    # Attendance Analytics
-    # ========================================================================
 
     metric_cards.render_section_header(
         "Attendance Analytics",
-        "Attendance classifications for the current session.",
+        f"Attendance classifications for the active {scope_label.lower()} scope.",
     )
 
     attendance_counts = cast(
@@ -194,7 +154,7 @@ def render() -> None:
         attendance_dataframe,
         x="Category",
         y="Count",
-        title="Attendance Distribution",
+        title=f"{scope_label} Attendance Distribution",
     )
 
     tables.render_dataframe(
@@ -203,13 +163,9 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
-    # Activity Analytics
-    # ========================================================================
-
     metric_cards.render_section_header(
         "Activity Analytics",
-        "Activity classifications recorded during the session.",
+        f"Activity classifications for the active {scope_label.lower()} scope.",
     )
 
     activity_counts = cast(
@@ -225,7 +181,7 @@ def render() -> None:
         activity_dataframe,
         x="Category",
         y="Count",
-        title="Activity Distribution",
+        title=f"{scope_label} Activity Distribution",
     )
 
     tables.render_dataframe(
@@ -234,48 +190,35 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
-    # Session Overview
-    # ========================================================================
-
     metric_cards.render_section_header(
         "Session Overview",
-        "General information for the selected session.",
-    )
-
-    session_dataframe = formatters.session_summary(
-        session,
+        (
+            f"Aggregated overview for the active {scope_label.lower()} "
+            f"presentation scope."
+        ),
     )
 
     tables.render_dataframe(
-        session_dataframe,
+        formatters.session_summary(
+            session,
+        ),
     )
 
     st.divider()
-
-    # ========================================================================
-    # Session Highlights
-    # ========================================================================
 
     metric_cards.render_section_header(
         "Session Highlights",
-        "Important milestones from the session timeline.",
-    )
-
-    highlight_records = formatters.highlight_records(
-        session=session,
-        summary=summary,
+        f"Important milestones from the active {scope_label.lower()} scope.",
     )
 
     tables.render_table(
-        highlight_records,
+        formatters.highlight_records(
+            session=session,
+            summary=summary,
+        ),
     )
 
     st.divider()
-
-    # ========================================================================
-    # Footer
-    # ========================================================================
 
     left_column, right_column = st.columns(
         [3, 1],
@@ -284,8 +227,10 @@ def render() -> None:
     with left_column:
         st.caption(
             (
-                f"Session Date: {session.session_date} | "
-                f"Unique Attendees: {session.attendee_count} | "
+                f"Scope: {scope_label} | "
+                f"{scope.start_date} → {scope.end_date} | "
+                f"Daily Sessions: {scope.session_count} | "
+                f"Unique Participants: {session.attendee_count} | "
                 f"Attendance Events: {session.attendance_count} | "
                 f"Done Events: {session.done_count} | "
                 f"Activity Events: {session.activity_count}"
