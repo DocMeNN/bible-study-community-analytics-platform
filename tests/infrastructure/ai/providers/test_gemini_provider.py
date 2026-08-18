@@ -34,9 +34,7 @@ def test_gemini_provider_generates_response() -> None:
         "generate",
         return_value=response,
     ):
-        result = provider.generate(
-            AIRequest(prompt="Hello")
-        )
+        result = provider.generate(AIRequest(prompt="Hello"))
 
     assert result.content == "Generated response"
     assert result.provider == "gemini"

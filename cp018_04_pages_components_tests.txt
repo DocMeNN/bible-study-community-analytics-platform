@@ -1,0 +1,3605 @@
+﻿============================================================
+CP-018 — MULTI-SESSION ANALYTICS PRESENTATION INTEGRATION
+============================================================
+BATCH: cp018_04_pages_components_tests.txt
+============================================================
+
+
+============================================================
+FILE: src\presentation\pages\dashboard_page.py
+============================================================
+
+# src/presentation/pages/dashboard_page.py
+
+"""
+Dashboard Page
+
+Purpose
+-------
+Displays the primary dashboard for a selected study session.
+
+Responsibilities
+----------------
+- Consume the globally selected Session through Presentation Context.
+- Display dashboard metrics.
+- Display attendance analytics.
+- Display activity analytics.
+- Display session overview.
+- Display AI-powered ministry insights.
+- Delegate application workflows to DashboardViewModel.
+- Delegate rendering to reusable presentation components.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+- No infrastructure access.
+- Do not render the unified session selector locally.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections import Counter
+from typing import Any, cast
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation import context
+from src.presentation.components.ai import ministry_ai_panel
+from src.presentation.components.common import (
+    charts,
+    metric_cards,
+    tables,
+)
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Dashboard Page
+# ============================================================================
+
+
+def render() -> None:
+    """
+    Render the Dashboard page.
+    """
+
+    context.initialize()
+
+    st.title("📊 Dashboard")
+
+    if not context.has_session_collection():
+
+        st.info(
+            "No sessions loaded.\n\n"
+            "Please import a WhatsApp chat from the Home page.",
+        )
+
+        return
+
+    session = context.current_session()
+
+    if session is None:
+
+        st.error(
+            "Unable to retrieve the selected session.",
+        )
+
+        return
+
+    viewmodel = context.dashboard_viewmodel()
+
+    expected_attendees = context.expected_attendees()
+
+    dashboard_data = viewmodel.get_dashboard(
+        session=session,
+        expected_attendees=expected_attendees,
+    )
+
+    summary = cast(
+        dict[str, Any],
+        dashboard_data["dashboard"],
+    )
+
+    attendance = cast(
+        dict[str, Any],
+        dashboard_data["attendance"],
+    )
+
+    activity = cast(
+        dict[str, Any],
+        dashboard_data["activity"],
+    )
+
+    # ========================================================================
+    # Overview
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Overview",
+        "Key performance indicators for this session.",
+    )
+
+    metric_cards.render_metric_row(
+        formatters.dashboard_metrics(
+            summary,
+        ),
+    )
+
+    st.divider()
+
+    # ========================================================================
+    # AI Ministry Intelligence
+    # ========================================================================
+
+    try:
+
+        metric_cards.render_section_header(
+            "AI Ministry Intelligence",
+            "Generate an AI-powered summary of the current meeting session.",
+        )
+
+        ai_viewmodel = context.ai_viewmodel()
+
+        session_information = (
+            ai_viewmodel.build_session_information(
+                session=session,
+            )
+        )
+
+        attendance_summary = (
+            ai_viewmodel.build_attendance_summary(
+                attendance=attendance,
+            )
+        )
+
+        activity_summary = (
+            ai_viewmodel.build_activity_summary(
+                activity=activity,
+            )
+        )
+
+        ministry_ai_panel.render(
+            title="Session Summary",
+            button_label="✨ Generate Session Summary",
+            callback=(
+                context.ai_controller().generate_session_summary
+            ),
+            callback_kwargs={
+                "session_information": session_information,
+                "attendance_summary": attendance_summary,
+                "activity_summary": activity_summary,
+            },
+            result_key="dashboard_session_summary",
+            button_key="dashboard_generate_summary",
+            help_text=(
+                "Generate an AI summary of this ministry session."
+            ),
+            empty_message=(
+                "Click 'Generate Session Summary' to create "
+                "an AI-powered overview of this meeting."
+            ),
+        )
+
+    except Exception as exc:
+
+        st.error(
+            "Unable to load the AI Ministry Intelligence panel.",
+        )
+
+        st.exception(exc)
+
+    # ========================================================================
+    # Attendance Analytics
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Attendance Analytics",
+        "Attendance classifications for the current session.",
+    )
+
+    attendance_counts = cast(
+        Counter[Any],
+        attendance["attendance_types"],
+    )
+
+    attendance_dataframe = (
+        formatters.counter_to_dataframe(
+            attendance_counts,
+        )
+    )
+
+    charts.render_bar_chart(
+        attendance_dataframe,
+        x="Category",
+        y="Count",
+        title="Attendance Distribution",
+    )
+
+    tables.render_dataframe(
+        attendance_dataframe,
+    )
+
+    st.divider()
+
+    # ========================================================================
+    # Activity Analytics
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Activity Analytics",
+        "Activity classifications recorded during the session.",
+    )
+
+    activity_counts = cast(
+        Counter[Any],
+        activity["activity_types"],
+    )
+
+    activity_dataframe = (
+        formatters.counter_to_dataframe(
+            activity_counts,
+        )
+    )
+
+    charts.render_bar_chart(
+        activity_dataframe,
+        x="Category",
+        y="Count",
+        title="Activity Distribution",
+    )
+
+    tables.render_dataframe(
+        activity_dataframe,
+    )
+
+    st.divider()
+
+    # ========================================================================
+    # Session Overview
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Session Overview",
+        "General information for the selected session.",
+    )
+
+    session_dataframe = formatters.session_summary(
+        session,
+    )
+
+    tables.render_dataframe(
+        session_dataframe,
+    )
+
+    st.divider()
+
+    # ========================================================================
+    # Session Highlights
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Session Highlights",
+        "Important milestones from the session timeline.",
+    )
+
+    highlight_records = formatters.highlight_records(
+        session=session,
+        summary=summary,
+    )
+
+    tables.render_table(
+        highlight_records,
+    )
+
+    st.divider()
+
+    # ========================================================================
+    # Footer
+    # ========================================================================
+
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
+
+    with left_column:
+
+        st.caption(
+            (
+                f"Session Date: {session.session_date} | "
+                f"Unique Attendees: {session.attendee_count} | "
+                f"Attendance Events: {session.attendance_count} | "
+                f"Done Events: {session.done_count} | "
+                f"Activity Events: {session.activity_count}"
+            ),
+        )
+
+    with right_column:
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True,
+        ):
+
+            st.rerun()
+
+
+============================================================
+FILE: src\presentation\pages\attendance_page.py
+============================================================
+
+# src/presentation/pages/attendance_page.py
+
+"""
+Attendance Page
+
+Purpose
+-------
+Displays attendance analytics for the selected ministry session.
+
+Responsibilities
+----------------
+- Coordinate the AttendanceViewModel.
+- Consume the globally selected Session through Presentation Context.
+- Display attendance session summary.
+- Coordinate attendance presentation components.
+- Display the attendance page footer.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+- No direct Application Service orchestration.
+- Consume Application results through the Presentation ViewModel.
+- Do not render the session selector locally.
+
+Session Selection
+-----------------
+The unified session selector is rendered once by the application shell.
+
+This page consumes the selected Session through:
+
+    context.current_session()
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation import context
+from src.presentation.components.attendance import (
+    distribution,
+    overview,
+)
+from src.presentation.components.common import (
+    metric_cards,
+    tables,
+)
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Attendance Page
+# ============================================================================
+
+
+def render() -> None:
+    """
+    Render the Attendance page.
+    """
+
+    context.initialize()
+
+    st.title("👥 Attendance")
+
+    if not context.has_session_collection():
+
+        st.info(
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
+        )
+
+        return
+
+    session = context.current_session()
+
+    if session is None:
+
+        st.info(
+            "No session is currently selected.",
+        )
+
+        return
+
+    attendance_viewmodel = (
+        context.attendance_viewmodel()
+    )
+
+    attendance = (
+        attendance_viewmodel.attendance_data(
+            session=session,
+            expected_attendees=(
+                context.expected_attendees()
+            ),
+        )
+    )
+
+    # =========================================================================
+    # Attendance Overview
+    # =========================================================================
+
+    overview.render(
+        attendance,
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Attendance Distribution
+    # =========================================================================
+
+    distribution.render(
+        attendance,
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Session Summary
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Session Attendance",
+        "Attendance information for this meeting.",
+    )
+
+    tables.render_dataframe(
+        formatters.session_summary(
+            session,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Footer
+    # =========================================================================
+
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
+
+    with left_column:
+
+        st.caption(
+            (
+                f"Session Date: {session.session_date} | "
+                f"Expected: {context.expected_attendees()} | "
+                f"Present: {session.attendee_count}"
+            ),
+        )
+
+    with right_column:
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True,
+        ):
+
+            st.rerun()
+
+
+============================================================
+FILE: src\presentation\pages\activity_page.py
+============================================================
+
+# src/presentation/pages/activity_page.py
+
+"""
+Activity Page
+
+Purpose
+-------
+Displays activity analytics for the selected ministry session.
+
+Responsibilities
+----------------
+- Coordinate activity presentation workflows.
+- Consume the globally selected Session through Presentation Context.
+- Display activity KPIs.
+- Display activity distribution.
+- Display session activity summary.
+- Delegate activity workflows to ActivityViewModel.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+- No infrastructure access.
+- Do not render the unified session selector locally.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections import Counter
+from typing import Any, cast
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation import context
+from src.presentation.components import (
+    charts,
+    metric_cards,
+    tables,
+)
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Activity Page
+# ============================================================================
+
+
+def render() -> None:
+    """
+    Render the Activity page.
+    """
+
+    context.initialize()
+
+    st.title("📈 Activity")
+
+    if not context.has_session_collection():
+
+        st.info(
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
+        )
+
+        return
+
+    session = context.current_session()
+
+    if session is None:
+
+        st.info(
+            "No session is currently selected.",
+        )
+
+        return
+
+    activity_viewmodel = (
+        context.activity_viewmodel()
+    )
+
+    activity = (
+        activity_viewmodel.activity_data(
+            session=session,
+        )
+    )
+
+    dashboard_viewmodel = (
+        context.dashboard_viewmodel()
+    )
+
+    summary = (
+        dashboard_viewmodel.dashboard_summary(
+            session=session,
+            expected_attendees=(
+                context.expected_attendees()
+            ),
+        )
+    )
+
+    # =========================================================================
+    # Typed Values
+    # =========================================================================
+
+    activity_count = cast(
+        int,
+        summary["activity_count"],
+    )
+
+    done_count = cast(
+        int,
+        summary["done_count"],
+    )
+
+    attendance_count = cast(
+        int,
+        summary["attendance_count"],
+    )
+
+    attendance_rate = cast(
+        float,
+        summary["attendance_rate"],
+    )
+
+    # =========================================================================
+    # Activity Overview
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Activity Overview",
+        "Activity statistics for the current session.",
+    )
+
+    metric_cards.render_metric_row(
+        [
+            (
+                "Activities",
+                activity_count,
+                None,
+                "Total recorded activities",
+            ),
+            (
+                "Done",
+                done_count,
+                None,
+                "Done acknowledgements",
+            ),
+            (
+                "Attendees",
+                attendance_count,
+                None,
+                "Unique attendees",
+            ),
+            (
+                "Attendance %",
+                formatters.percentage(
+                    attendance_rate,
+                ),
+                None,
+                "Attendance rate",
+            ),
+        ],
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Activity Distribution
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Activity Distribution",
+        "Distribution of recorded activities.",
+    )
+
+    activity_counts = cast(
+        Counter[Any],
+        activity["activity_types"],
+    )
+
+    activity_dataframe = (
+        formatters.counter_to_dataframe(
+            activity_counts,
+        )
+    )
+
+    charts.render_bar_chart(
+        activity_dataframe,
+        x="Category",
+        y="Count",
+        title="Activity Distribution",
+    )
+
+    tables.render_dataframe(
+        activity_dataframe,
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Session Summary
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Session Activity",
+        "General activity information for this meeting.",
+    )
+
+    tables.render_dataframe(
+        formatters.session_summary(
+            session,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Session Highlights
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Session Highlights",
+        "Important milestones during the session.",
+    )
+
+    tables.render_table(
+        formatters.highlight_records(
+            session=session,
+            summary=summary,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Footer
+    # =========================================================================
+
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
+
+    with left_column:
+
+        st.caption(
+            (
+                f"Session Date: {session.session_date} | "
+                f"Activities: {session.activity_count} | "
+                f"Done Events: {session.done_count}"
+            ),
+        )
+
+    with right_column:
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True,
+        ):
+
+            st.rerun()
+
+
+============================================================
+FILE: src\presentation\pages\reports_page.py
+============================================================
+
+# src/presentation/pages/reports_page.py
+
+"""
+Reports Page
+
+Purpose
+-------
+Displays reporting and AI executive reporting for the selected session.
+
+Responsibilities
+----------------
+- Coordinate report presentation workflows.
+- Consume the globally selected Session through Presentation Context.
+- Display report metrics.
+- Display session summary.
+- Display AI executive report generation.
+- Display export roadmap.
+- Delegate report workflows to ReportViewModel.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+- No report generation.
+- No file I/O.
+- Do not render the unified session selector locally.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation import context
+from src.presentation.components.ai import ministry_ai_panel
+from src.presentation.components.common import (
+    metric_cards,
+    tables,
+)
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Reports Page
+# ============================================================================
+
+
+def render() -> None:
+    """
+    Render the Reports page.
+    """
+
+    context.initialize()
+
+    st.title("📄 Reports")
+
+    if not context.has_session_collection():
+
+        st.info(
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
+        )
+
+        return
+
+    session = context.current_session()
+
+    if session is None:
+
+        st.info(
+            "No session is currently selected.",
+        )
+
+        return
+
+    expected_attendees = (
+        context.expected_attendees()
+    )
+
+    report_viewmodel = (
+        context.report_viewmodel()
+    )
+
+    report_data = (
+        report_viewmodel.report_data(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+    )
+
+    summary = report_data["dashboard"]
+
+    # =========================================================================
+    # Report Overview
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Report Overview",
+        "Summary statistics included in this report.",
+    )
+
+    metric_cards.render_metric_row(
+        formatters.dashboard_metrics(
+            summary,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Session Summary
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Session Summary",
+        "General information for the current meeting.",
+    )
+
+    tables.render_dataframe(
+        formatters.session_summary(
+            session,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Session Highlights
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Session Highlights",
+        "Important milestones from this meeting.",
+    )
+
+    tables.render_table(
+        formatters.highlight_records(
+            session=session,
+            summary=summary,
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # AI Executive Summary
+    # =========================================================================
+
+    ai_viewmodel = context.ai_viewmodel()
+
+    report = (
+        ai_viewmodel.build_executive_report(
+            session=session,
+            dashboard_summary=(
+                report_data["dashboard"]
+            ),
+            attendance=(
+                report_data["attendance"]
+            ),
+            activity=(
+                report_data["activity"]
+            ),
+        )
+    )
+
+    metric_cards.render_section_header(
+        "AI Executive Report",
+        "Generate an executive summary for ministry leadership.",
+    )
+
+    ministry_ai_panel.render(
+        title="Executive Summary",
+        button_label="✨ Generate Executive Summary",
+        callback=(
+            context.ai_controller()
+            .generate_executive_summary
+        ),
+        callback_kwargs={
+            "report": report,
+        },
+        result_key="executive_summary",
+        button_key="generate_executive_summary",
+        help_text=(
+            "Generate an executive report from "
+            "the current session."
+        ),
+        empty_message=(
+            "Click 'Generate Executive Summary' "
+            "to create an AI-powered leadership report."
+        ),
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Export
+    # =========================================================================
+
+    metric_cards.render_section_header(
+        "Export",
+        "Export functionality planned for the next checkpoint.",
+    )
+
+    st.info(
+        "Planned export formats:\n\n"
+        "• PDF Ministry Report\n"
+        "• Excel Workbook\n"
+        "• CSV Export\n"
+        "• AI Executive Summary\n"
+        "• Printable Ministry Report",
+    )
+
+    st.divider()
+
+    # =========================================================================
+    # Footer
+    # =========================================================================
+
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
+
+    with left_column:
+
+        st.caption(
+            (
+                f"Session Date: {session.session_date} | "
+                f"Attendance: {summary['attendance_count']} | "
+                f"Activities: {summary['activity_count']}"
+            ),
+        )
+
+    with right_column:
+
+        if st.button(
+            "🔄 Refresh",
+            use_container_width=True,
+        ):
+
+            st.rerun()
+
+
+============================================================
+FILE: src\presentation\components\common\session_selector.py
+============================================================
+
+# src/presentation/components/common/session_selector.py
+
+"""
+Hierarchical Session Selector
+
+Presentation flow
+-----------------
+Presentation Scope
+        â†“
+Session Group
+        â†“
+Selected Daily Session
+
+Responsibilities
+----------------
+- Render the unified Presentation Scope selector.
+- Apply the selected GroupingConfiguration through the Presentation Context.
+- Render the Session Group selector.
+- Resolve the selected Daily Session from the selected Session Group.
+- Persist the selected Daily Session through the Presentation Context.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No parsing.
+- No Infrastructure access.
+- No direct grouping strategy construction.
+
+The Presentation Context owns grouping configuration and
+SessionGroupingService composition.
+
+Session Selection Design
+------------------------
+The user selects:
+
+1. Presentation Scope.
+2. Session Group.
+
+The Daily Session is resolved automatically.
+
+There is intentionally no separate Daily Session selector.
+
+The selected Daily Session is the first Daily Session
+contained in the selected Session Group unless the currently
+selected Daily Session already belongs to that group.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Sequence
+from datetime import date
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.session import Session
+from src.presentation import context
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.models.session_group import SessionGroup
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+SCOPE_SELECTOR_KEY = "presentation_scope_selector"
+
+GROUP_SELECTOR_KEY = "session_group_selector"
+
+
+# ============================================================================
+# Presentation Scope Labels
+# ============================================================================
+
+_SCOPE_LABELS: dict[GroupingPeriod, str] = {
+    GroupingPeriod.DAY: "Daily",
+    GroupingPeriod.WEEK: "Weekly",
+    GroupingPeriod.MONTH: "Monthly",
+    GroupingPeriod.FIRST_HALF: "First Half of Year",
+    GroupingPeriod.SECOND_HALF: "Last Half of Year",
+    GroupingPeriod.YEAR: "Yearly",
+}
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _group_label(
+    group: SessionGroup,
+) -> str:
+    """
+    Return a readable label for a SessionGroup.
+    """
+
+    return (
+        f"{group.start_date} â€“ "
+        f"{group.end_date}"
+    )
+
+
+def _group_sessions(
+    group: SessionGroup,
+) -> tuple[Session, ...]:
+    """
+    Return the Daily Sessions contained in a SessionGroup.
+    """
+
+    return tuple(
+        group.sessions,
+    )
+
+
+def _scope_options() -> tuple[GroupingPeriod, ...]:
+    """
+    Return the supported Presentation Scope options.
+    """
+
+    return tuple(
+        _SCOPE_LABELS.keys(),
+    )
+
+
+def _scope_label(
+    period: GroupingPeriod,
+) -> str:
+    """
+    Return the display label for a grouping period.
+    """
+
+    return _SCOPE_LABELS[period]
+
+
+def _current_scope_index(
+    options: Sequence[GroupingPeriod],
+) -> int:
+    """
+    Return the index of the currently configured grouping period.
+    """
+
+    current_period = (
+        context.grouping_configuration().period
+    )
+
+    if current_period in options:
+
+        return options.index(
+            current_period,
+        )
+
+    return 0
+
+
+def _apply_scope_selection(
+    selected_period: GroupingPeriod,
+) -> None:
+    """
+    Apply a selected Presentation Scope.
+
+    The Context remains responsible for constructing the
+    corresponding grouping service.
+    """
+
+    current_configuration = (
+        context.grouping_configuration()
+    )
+
+    if (
+        current_configuration.period
+        is selected_period
+    ):
+
+        return
+
+    context.set_grouping_configuration(
+        GroupingConfiguration(
+            period=selected_period,
+            week_start_day=(
+                current_configuration.week_start_day
+            ),
+        ),
+    )
+
+
+def _current_group_index(
+    groups: Sequence[SessionGroup],
+    current_date: date | None,
+) -> int:
+    """
+    Return the index of the group containing the current Session.
+    """
+
+    if current_date is None:
+
+        return 0
+
+    for index, group in enumerate(groups):
+
+        group_dates = {
+            session.session_date
+            for session in _group_sessions(
+                group,
+            )
+        }
+
+        if current_date in group_dates:
+
+            return index
+
+    return 0
+
+
+def _select_group(
+    groups: tuple[SessionGroup, ...],
+    current_date: date | None,
+) -> SessionGroup:
+    """
+    Render the Session Group selector and return the selected group.
+    """
+
+    group_labels = [
+        _group_label(
+            group,
+        )
+        for group in groups
+    ]
+
+    selected_group_index = _current_group_index(
+        groups=groups,
+        current_date=current_date,
+    )
+
+    selected_group_label = st.selectbox(
+        "Select Session Group",
+        options=group_labels,
+        index=selected_group_index,
+        key=GROUP_SELECTOR_KEY,
+        help=(
+            "Select the presentation group containing "
+            "the Daily Session to analyse."
+        ),
+    )
+
+    return groups[
+        group_labels.index(
+            selected_group_label,
+        )
+    ]
+
+
+def _resolve_selected_session(
+    group: SessionGroup,
+    current_date: date | None,
+) -> Session | None:
+    """
+    Resolve the selected Daily Session from the selected group.
+
+    If the currently selected Daily Session belongs to the
+    selected group, it remains selected.
+
+    Otherwise, the first Daily Session in the selected group
+    becomes the active Session.
+
+    No Daily Session selectbox is rendered.
+    """
+
+    group_sessions = _group_sessions(
+        group,
+    )
+
+    if not group_sessions:
+
+        return None
+
+    session_dates = [
+        session.session_date
+        for session in group_sessions
+    ]
+
+    if current_date in session_dates:
+
+        selected_date = current_date
+
+    else:
+
+        selected_date = session_dates[0]
+
+    if (
+        context.selected_session_date()
+        != selected_date
+    ):
+
+        context.set_selected_session(
+            selected_date,
+        )
+
+    return context.current_session()
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+
+
+def render() -> Session | None:
+    """
+    Render hierarchical Session selection.
+
+    The user selects:
+
+    1. Presentation Scope.
+    2. Session Group.
+
+    The Daily Session is resolved automatically from
+    the selected Session Group.
+    """
+
+    session_collection = (
+        context.current_session_collection()
+    )
+
+    if session_collection is None:
+
+        return None
+
+    if session_collection.is_empty:
+
+        return None
+
+    scope_options = _scope_options()
+
+    selected_period = st.selectbox(
+        "Presentation Scope",
+        options=scope_options,
+        index=_current_scope_index(
+            scope_options,
+        ),
+        format_func=_scope_label,
+        key=SCOPE_SELECTOR_KEY,
+        help=(
+            "Choose how Daily Sessions are grouped "
+            "for presentation and navigation."
+        ),
+    )
+
+    _apply_scope_selection(
+        selected_period,
+    )
+
+    groups = tuple(
+        context.grouped_sessions(),
+    )
+
+    if not groups:
+
+        return None
+
+    current_session = (
+        context.current_session()
+    )
+
+    current_date = (
+        current_session.session_date
+        if current_session is not None
+        else None
+    )
+
+    selected_group = _select_group(
+        groups=groups,
+        current_date=current_date,
+    )
+
+    return _resolve_selected_session(
+        group=selected_group,
+        current_date=current_date,
+    )
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "render",
+]
+
+
+============================================================
+FILE: src\presentation\components\common\metric_cards.py
+============================================================
+
+# src/presentation/components/metric_cards.py
+
+"""
+Metric Card Components
+
+Purpose
+-------
+Reusable Streamlit metric card components for displaying
+key performance indicators (KPIs) throughout the application.
+
+Responsibilities
+----------------
+- Render a single metric card.
+- Render a row of metric cards.
+- Provide a consistent metric appearance.
+- Remain presentation-only.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No Session objects.
+- No Application Services.
+- No Infrastructure access.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Sequence
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Type Aliases
+# ============================================================================
+
+MetricValue = int | float | str
+
+Metric = tuple[
+    str,  # Label
+    MetricValue,  # Value
+    str | None,  # Delta
+    str | None,  # Help text
+]
+
+
+# ============================================================================
+# Single Metric
+# ============================================================================
+
+
+def render_metric(
+    *,
+    label: str,
+    value: MetricValue,
+    delta: str | None = None,
+    help_text: str | None = None,
+) -> None:
+    """
+    Render a single Streamlit metric card.
+
+    Parameters
+    ----------
+    label:
+        Metric title.
+
+    value:
+        Metric value.
+
+    delta:
+        Optional delta displayed beneath the value.
+
+    help_text:
+        Optional tooltip.
+    """
+
+    st.metric(
+        label=label,
+        value=value,
+        delta=delta,
+        help=help_text,
+    )
+
+
+# ============================================================================
+# Metric Row
+# ============================================================================
+
+
+def render_metric_row(
+    metrics: Sequence[Metric],
+) -> None:
+    """
+    Render multiple metrics in a responsive row.
+
+    Parameters
+    ----------
+    metrics:
+        Sequence of metric definitions.
+    """
+
+    if not metrics:
+        st.info("No metrics available.")
+        return
+
+    columns = st.columns(len(metrics))
+
+    for column, metric in zip(columns, metrics, strict=False):
+        label, value, delta, help_text = metric
+
+        with column:
+            render_metric(
+                label=label,
+                value=value,
+                delta=delta,
+                help_text=help_text,
+            )
+
+
+# ============================================================================
+# Section Header
+# ============================================================================
+
+
+def render_section_header(
+    title: str,
+    description: str | None = None,
+) -> None:
+    """
+    Render a section heading above a metric group.
+
+    Parameters
+    ----------
+    title:
+        Section title.
+
+    description:
+        Optional descriptive text.
+    """
+
+    st.subheader(title)
+
+    if description:
+        st.caption(description)
+
+
+# ============================================================================
+# Empty State
+# ============================================================================
+
+
+def render_empty_metrics(
+    message: str = "No metrics available.",
+) -> None:
+    """
+    Display an empty metric state.
+
+    Parameters
+    ----------
+    message:
+        Message displayed to the user.
+    """
+
+    st.info(message)
+
+
+============================================================
+FILE: src\presentation\components\attendance\overview.py
+============================================================
+
+# src/presentation/components/attendance/overview.py
+
+"""
+Attendance Overview Component
+
+Purpose
+-------
+Renders the attendance overview section for the Attendance Analytics
+workspace.
+
+Responsibilities
+----------------
+- Display attendance KPI cards.
+- Delegate metric formatting to presentation utilities.
+- Render presentation components only.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation.components.common import metric_cards
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Attendance Overview
+# ============================================================================
+
+
+def render(
+    attendance: dict[str, Any],
+) -> None:
+    """
+    Render the attendance overview section.
+
+    Parameters
+    ----------
+    attendance:
+        Attendance summary generated by the application layer.
+    """
+
+    metric_cards.render_section_header(
+        "Attendance Overview",
+        "Attendance statistics for the current session.",
+    )
+
+    metric_cards.render_metric_row(
+        formatters.attendance_metrics(
+            attendance,
+        )
+    )
+
+
+============================================================
+FILE: src\presentation\components\attendance\trend.py
+============================================================
+
+
+============================================================
+FILE: src\presentation\components\activity\overview.py
+============================================================
+
+
+============================================================
+FILE: src\presentation\components\activity\timeline.py
+============================================================
+
+
+============================================================
+FILE: tests\application\services\test_multi_session_analytics_service.py
+============================================================
+
+# tests/application/services/test_multi_session_analytics_service.py
+
+"""
+Multi-Session Analytics Service Tests
+
+Purpose
+-------
+Verify application-level analytics coordination across multiple
+Daily Session aggregates.
+
+Coverage
+--------
+- Empty session collections.
+- Single-session analytics.
+- Multiple-session analytics.
+- Chronological date boundaries.
+- Unique participant aggregation.
+- Case-insensitive participant deduplication.
+- Done event aggregation.
+- Activity event aggregation.
+- Iterable input support.
+- Session ordering independence.
+
+Architectural Rules
+-------------------
+- Daily Session remains the atomic Domain aggregate.
+- The service coordinates analytics across selected sessions.
+- The service does not perform Presentation-layer grouping.
+- The service does not own Streamlit state.
+- The service does not replace the Session domain model.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+
+from datetime import date, datetime
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+
+from src.application.dto.multi_session_analytics_result import (
+    MultiSessionAnalyticsResult,
+)
+from src.application.services.multi_session_analytics_service import (
+    MultiSessionAnalyticsService,
+)
+from src.domain.enums.activity_type import ActivityType
+from src.domain.models.activity_event import ActivityEvent
+from src.domain.models.attendance_event import AttendanceEvent
+from src.domain.models.done_event import DoneEvent
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+
+# ============================================================================
+# Test Helpers
+# ============================================================================
+
+
+def message(
+    *,
+    sender: str = "Alice",
+    content: str = "Message",
+    minute: int = 0,
+    line_number: int = 1,
+) -> Message:
+    """
+    Create a valid Message for testing.
+    """
+
+    return Message(
+        timestamp=datetime(
+            2026,
+            7,
+            23,
+            8,
+            minute,
+        ),
+        sender=sender,
+        content=content,
+        line_number=line_number,
+    )
+
+
+def attendance_event(
+    *,
+    attendee: str = "Alice",
+    minute: int = 0,
+    line_number: int = 1,
+) -> AttendanceEvent:
+    """
+    Create a valid AttendanceEvent for testing.
+    """
+
+    return AttendanceEvent(
+        attendee=attendee,
+        source_message=message(
+            sender=attendee,
+            content="Participation",
+            minute=minute,
+            line_number=line_number,
+        ),
+    )
+
+
+def done_event(
+    *,
+    attendee: str = "Alice",
+    minute: int = 0,
+    line_number: int = 1,
+) -> DoneEvent:
+    """
+    Create a valid DoneEvent for testing.
+    """
+
+    return DoneEvent(
+        attendee=attendee,
+        source_message=message(
+            sender=attendee,
+            content="Done",
+            minute=minute,
+            line_number=line_number,
+        ),
+    )
+
+
+def activity_event(
+    *,
+    activity_type: ActivityType = ActivityType.INSIGHT,
+    minute: int = 0,
+    line_number: int = 1,
+) -> ActivityEvent:
+    """
+    Create a valid ActivityEvent for testing.
+    """
+
+    return ActivityEvent(
+        activity_type=activity_type,
+        source_message=message(
+            content="Activity",
+            minute=minute,
+            line_number=line_number,
+        ),
+    )
+
+
+def session(
+    *,
+    session_date: date,
+    attendance_events: tuple[AttendanceEvent, ...] = (),
+    done_events: tuple[DoneEvent, ...] = (),
+    activity_events: tuple[ActivityEvent, ...] = (),
+) -> Session:
+    """
+    Create a Session with the requested domain events.
+    """
+
+    return Session(
+        session_date=session_date,
+        attendance_events=attendance_events,
+        done_events=done_events,
+        activity_events=activity_events,
+    )
+
+
+# ============================================================================
+# Service Construction
+# ============================================================================
+
+
+class TestMultiSessionAnalyticsServiceConstruction:
+    """
+    Test MultiSessionAnalyticsService construction.
+    """
+
+    def test_service_can_be_constructed(self) -> None:
+        """
+        The service can be instantiated.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        assert isinstance(
+            service,
+            MultiSessionAnalyticsService,
+        )
+
+
+# ============================================================================
+# Empty Input
+# ============================================================================
+
+
+class TestEmptyInput:
+    """
+    Test analytics for empty input.
+    """
+
+    def test_empty_sessions_return_empty_result(self) -> None:
+        """
+        Empty input produces zero-valued analytics.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (),
+        )
+
+        assert isinstance(
+            result,
+            MultiSessionAnalyticsResult,
+        )
+
+        assert result.session_count == 0
+        assert result.start_date is None
+        assert result.end_date is None
+        assert result.total_participants == 0
+        assert result.total_done_events == 0
+        assert result.total_activity_events == 0
+
+
+# ============================================================================
+# Single Session Analytics
+# ============================================================================
+
+
+class TestSingleSessionAnalytics:
+    """
+    Test analytics across one Daily Session.
+    """
+
+    def test_single_session_count_is_one(self) -> None:
+        """
+        One Daily Session produces a session count of one.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        23,
+                    ),
+                ),
+            ),
+        )
+
+        assert result.session_count == 1
+
+    def test_single_session_date_boundaries_are_identical(self) -> None:
+        """
+        A single session has identical start and end dates.
+        """
+
+        session_date = date(
+            2026,
+            7,
+            23,
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                session(
+                    session_date=session_date,
+                ),
+            ),
+        )
+
+        assert result.start_date == session_date
+        assert result.end_date == session_date
+
+
+# ============================================================================
+# Multiple Session Analytics
+# ============================================================================
+
+
+class TestMultipleSessionAnalytics:
+    """
+    Test analytics across multiple Daily Sessions.
+    """
+
+    def test_multiple_sessions_are_counted(self) -> None:
+        """
+        The result counts all selected sessions.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        23,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        24,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        25,
+                    ),
+                ),
+            ),
+        )
+
+        assert result.session_count == 3
+
+    def test_date_boundaries_cover_earliest_and_latest_sessions(self) -> None:
+        """
+        Date boundaries represent the earliest and latest session dates.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        24,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        23,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        25,
+                    ),
+                ),
+            ),
+        )
+
+        assert result.start_date == date(
+            2026,
+            7,
+            23,
+        )
+
+        assert result.end_date == date(
+            2026,
+            7,
+            25,
+        )
+
+
+# ============================================================================
+# Participant Aggregation
+# ============================================================================
+
+
+class TestParticipantAggregation:
+    """
+    Test unique participant aggregation across sessions.
+    """
+
+    def test_participants_are_aggregated_across_sessions(self) -> None:
+        """
+        Participants from all sessions are combined.
+        """
+
+        first_session = session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="Alice",
+                ),
+                attendance_event(
+                    attendee="Bob",
+                    minute=1,
+                    line_number=2,
+                ),
+            ),
+        )
+
+        second_session = session(
+            session_date=date(
+                2026,
+                7,
+                24,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="Carol",
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                first_session,
+                second_session,
+            ),
+        )
+
+        assert result.total_participants == 3
+
+    def test_duplicate_participants_are_counted_once(self) -> None:
+        """
+        A participant appearing in multiple sessions is counted once.
+        """
+
+        first_session = session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="Alice",
+                ),
+            ),
+        )
+
+        second_session = session(
+            session_date=date(
+                2026,
+                7,
+                24,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="Alice",
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                first_session,
+                second_session,
+            ),
+        )
+
+        assert result.total_participants == 1
+
+    def test_participant_deduplication_is_case_insensitive(self) -> None:
+        """
+        Participant names differing only by case are counted once.
+        """
+
+        first_session = session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="Alice",
+                ),
+            ),
+        )
+
+        second_session = session(
+            session_date=date(
+                2026,
+                7,
+                24,
+            ),
+            attendance_events=(
+                attendance_event(
+                    attendee="alice",
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                first_session,
+                second_session,
+            ),
+        )
+
+        assert result.total_participants == 1
+
+
+# ============================================================================
+# Done Event Aggregation
+# ============================================================================
+
+
+class TestDoneEventAggregation:
+    """
+    Test Done event aggregation across sessions.
+    """
+
+    def test_done_events_are_summed_across_sessions(self) -> None:
+        """
+        Total Done events include events from every session.
+        """
+
+        first_session = session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+            done_events=(
+                done_event(
+                    attendee="Alice",
+                ),
+                done_event(
+                    attendee="Bob",
+                    minute=1,
+                    line_number=2,
+                ),
+            ),
+        )
+
+        second_session = session(
+            session_date=date(
+                2026,
+                7,
+                24,
+            ),
+            done_events=(
+                done_event(
+                    attendee="Carol",
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                first_session,
+                second_session,
+            ),
+        )
+
+        assert result.total_done_events == 3
+
+
+# ============================================================================
+# Activity Event Aggregation
+# ============================================================================
+
+
+class TestActivityEventAggregation:
+    """
+    Test activity event aggregation across sessions.
+    """
+
+    def test_activity_events_are_summed_across_sessions(self) -> None:
+        """
+        Total activity events include events from every session.
+        """
+
+        first_session = session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+            activity_events=(
+                activity_event(
+                    activity_type=ActivityType.INSIGHT,
+                ),
+                activity_event(
+                    activity_type=ActivityType.DISCUSSION,
+                    minute=1,
+                    line_number=2,
+                ),
+            ),
+        )
+
+        second_session = session(
+            session_date=date(
+                2026,
+                7,
+                24,
+            ),
+            activity_events=(
+                activity_event(
+                    activity_type=ActivityType.PRAYER_SESSION,
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                first_session,
+                second_session,
+            ),
+        )
+
+        assert result.total_activity_events == 3
+
+
+# ============================================================================
+# Iterable Input
+# ============================================================================
+
+
+class TestIterableInput:
+    """
+    Test support for general iterables.
+    """
+
+    def test_generator_input_is_supported(self) -> None:
+        """
+        The service accepts a generator of sessions.
+        """
+
+        sessions = (
+            session(
+                session_date=date(
+                    2026,
+                    7,
+                    23,
+                ),
+            ),
+            session(
+                session_date=date(
+                    2026,
+                    7,
+                    24,
+                ),
+            ),
+        )
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                item
+                for item in sessions
+            ),
+        )
+
+        assert result.session_count == 2
+
+
+# ============================================================================
+# Ordering Independence
+# ============================================================================
+
+
+class TestOrderingIndependence:
+    """
+    Test that input ordering does not affect analytics boundaries.
+    """
+
+    def test_unsorted_sessions_are_ordered_for_date_boundaries(self) -> None:
+        """
+        Sessions are sorted chronologically before boundary calculation.
+        """
+
+        service = MultiSessionAnalyticsService()
+
+        result = service.analyze(
+            (
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        25,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        23,
+                    ),
+                ),
+                session(
+                    session_date=date(
+                        2026,
+                        7,
+                        24,
+                    ),
+                ),
+            ),
+        )
+
+        assert result.start_date == date(
+            2026,
+            7,
+            23,
+        )
+
+        assert result.end_date == date(
+            2026,
+            7,
+            25,
+        )
+
+============================================================
+FILE: tests\application\services\test_dashboard_service.py
+============================================================
+
+# tests/application/services/test_dashboard_service.py
+
+"""
+Dashboard Service Tests
+
+Tests the application-level DashboardService orchestration.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+import pytest
+
+from src.application.services.activity_service import ActivityService
+from src.application.services.attendance_service import AttendanceService
+from src.application.services.dashboard_service import DashboardService
+from src.domain.enums.activity_type import ActivityType
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def session_date() -> date:
+    """Return a test session date."""
+    return date(2026, 7, 23)
+
+
+@pytest.fixture
+def messages() -> list[Message]:
+    """Return representative study messages."""
+
+    return [
+        Message(
+            timestamp=datetime(2026, 7, 23, 8, 0),
+            sender="System",
+            content="SCRIPTURE READING",
+            line_number=1,
+        ),
+        Message(
+            timestamp=datetime(2026, 7, 23, 8, 1),
+            sender="Alice",
+            content="Insight from today's reading",
+            line_number=2,
+        ),
+        Message(
+            timestamp=datetime(2026, 7, 23, 8, 2),
+            sender="Bob",
+            content="Done",
+            line_number=3,
+        ),
+        Message(
+            timestamp=datetime(2026, 7, 23, 8, 3),
+            sender="Alice",
+            content="Discussion about the passage",
+            line_number=4,
+        ),
+    ]
+
+
+@pytest.fixture
+def service() -> DashboardService:
+    """Return a DashboardService instance."""
+    return DashboardService()
+
+
+@pytest.fixture
+def session(
+    service: DashboardService,
+    session_date: date,
+    messages: list[Message],
+) -> Session:
+    """Build and return a test session."""
+
+    return service.build_session(
+        session_date=session_date,
+        messages=messages,
+    )
+
+
+# ============================================================================
+# Initialization
+# ============================================================================
+
+
+class TestDashboardServiceInitialization:
+    """Test DashboardService initialization."""
+
+    def test_creates_default_services(
+        self,
+        service: DashboardService,
+    ) -> None:
+        """Default application services are created."""
+
+        assert isinstance(
+            service.attendance_service,
+            AttendanceService,
+        )
+
+        assert isinstance(
+            service.activity_service,
+            ActivityService,
+        )
+
+    def test_accepts_injected_services(self) -> None:
+        """Custom application services are preserved."""
+
+        attendance_service = AttendanceService()
+        activity_service = ActivityService()
+
+        service = DashboardService(
+            attendance_service=attendance_service,
+            activity_service=activity_service,
+        )
+
+        assert service.attendance_service is attendance_service
+        assert service.activity_service is activity_service
+
+
+# ============================================================================
+# Session Construction
+# ============================================================================
+
+
+class TestSessionConstruction:
+    """Test Session construction."""
+
+    def test_build_session(
+        self,
+        service: DashboardService,
+        session_date: date,
+        messages: list[Message],
+    ) -> None:
+        """DashboardService builds a Session aggregate."""
+
+        result = service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+        assert isinstance(result, Session)
+        assert result.session_date == session_date
+
+    def test_build_session_delegates_to_attendance_service(
+        self,
+        service: DashboardService,
+        session_date: date,
+        messages: list[Message],
+    ) -> None:
+        """Session construction is delegated to AttendanceService."""
+
+        result = service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+        expected = service.attendance_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+        assert result == expected
+
+
+# ============================================================================
+# Dashboard Summary
+# ============================================================================
+
+
+class TestDashboardSummary:
+    """Test dashboard summary generation."""
+
+    def test_returns_expected_keys(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Dashboard summary contains expected metrics."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        expected_keys = {
+            "session_date",
+            "attendance_count",
+            "attendance_rate",
+            "done_count",
+            "activity_count",
+            "attendance_events",
+            "participants",
+            "first_done",
+            "first_activity",
+            "last_activity",
+            "duration",
+        }
+
+        assert set(result) == expected_keys
+
+    def test_returns_session_date(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Summary contains the session date."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["session_date"] == session.session_date
+
+    def test_returns_participant_count(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Summary contains the unique participant count."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["participants"] == session.attendee_count
+
+    def test_returns_attendance_rate(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Summary contains the calculated attendance rate."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["attendance_rate"] == 20.0
+
+    def test_returns_done_count(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Summary contains the Done event count."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["done_count"] == session.done_count
+
+    def test_returns_activity_count(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Summary contains the activity count."""
+
+        result = service.dashboard_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["activity_count"] == session.activity_count
+
+
+# ============================================================================
+# Attendance Summary
+# ============================================================================
+
+
+class TestAttendanceSummary:
+    """Test attendance summary generation."""
+
+    def test_returns_expected_keys(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Attendance summary contains expected metrics."""
+
+        result = service.attendance_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        expected_keys = {
+            "attendees",
+            "participants",
+            "attendance_count",
+            "attendance_rate",
+            "attendance_types",
+        }
+
+        assert set(result) == expected_keys
+
+    def test_returns_attendees(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Attendance summary returns observed attendees."""
+
+        result = service.attendance_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["attendees"] == session.unique_attendees
+
+    def test_returns_attendance_count(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Attendance summary returns unique attendance count."""
+
+        result = service.attendance_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["attendance_count"] == session.attendee_count
+
+    def test_returns_attendance_rate(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Attendance summary returns attendance rate."""
+
+        result = service.attendance_summary(
+            session=session,
+            expected_attendees=10,
+        )
+
+        assert result["attendance_rate"] == 20.0
+
+
+# ============================================================================
+# Activity Summary
+# ============================================================================
+
+
+class TestActivitySummary:
+    """Test activity summary generation."""
+
+    def test_returns_expected_keys(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Activity summary contains expected metrics."""
+
+        result = service.activity_summary(
+            session,
+        )
+
+        expected_keys = {
+            "activity_count",
+            "activity_types",
+            "first_activity",
+            "last_activity",
+        }
+
+        assert set(result) == expected_keys
+
+    def test_returns_activity_count(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Activity summary returns activity count."""
+
+        result = service.activity_summary(
+            session,
+        )
+
+        assert result["activity_count"] == session.activity_count
+
+    def test_returns_activity_types(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Activity summary returns activity type counts."""
+
+        result = service.activity_summary(
+            session,
+        )
+
+        activity_types = result["activity_types"]
+
+        assert activity_types[ActivityType.INSIGHT] == 1
+        assert activity_types[ActivityType.DISCUSSION] == 1
+
+
+# ============================================================================
+# Session Summary
+# ============================================================================
+
+
+class TestSessionSummary:
+    """Test session summary generation."""
+
+    def test_returns_expected_keys(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Session summary contains expected metrics."""
+
+        result = service.session_summary(
+            session,
+        )
+
+        expected_keys = {
+            "session_date",
+            "start_time",
+            "end_time",
+            "duration",
+            "participants",
+            "attendance_events",
+            "done_events",
+            "activity_events",
+            "total_events",
+        }
+
+        assert set(result) == expected_keys
+
+    def test_returns_session_metrics(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """Session summary returns aggregate metrics."""
+
+        result = service.session_summary(
+            session,
+        )
+
+        assert result["session_date"] == session.session_date
+        assert result["participants"] == session.attendee_count
+        assert result["attendance_events"] == session.attendance_count
+        assert result["done_events"] == session.done_count
+        assert result["activity_events"] == session.activity_count
+        assert result["total_events"] == session.total_events
+
+
+# ============================================================================
+# Convenience Methods
+# ============================================================================
+
+
+class TestConvenienceMethods:
+    """Test DashboardService convenience methods."""
+
+    def test_has_attendance_returns_true(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """has_attendance returns True when attendance exists."""
+
+        assert service.has_attendance(session) is True
+
+    def test_has_activities_returns_true(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """has_activities returns True when activities exist."""
+
+        assert service.has_activities(session) is True
+
+    def test_is_empty_returns_false(
+        self,
+        service: DashboardService,
+        session: Session,
+    ) -> None:
+        """is_empty returns False for a populated session."""
+
+        assert service.is_empty(session) is False
+
+    def test_empty_session_reports_no_events(
+        self,
+        service: DashboardService,
+        session_date: date,
+    ) -> None:
+        """Empty sessions report no events."""
+
+        empty_session = Session(
+            session_date=session_date,
+        )
+
+        assert service.has_attendance(empty_session) is False
+        assert service.has_activities(empty_session) is False
+        assert service.is_empty(empty_session) is True
+
+
+# ============================================================================
+# Representations
+# ============================================================================
+
+
+class TestRepresentations:
+    """Test DashboardService representations."""
+
+    def test_repr_contains_service_name(
+        self,
+        service: DashboardService,
+    ) -> None:
+        """repr contains the class name."""
+
+        result = repr(service)
+
+        assert "DashboardService" in result
+
+    def test_str_matches_repr(
+        self,
+        service: DashboardService,
+    ) -> None:
+        """str returns the official representation."""
+
+        assert str(service) == repr(service)
+
+
+============================================================
+FILE: tests\presentation\grouping\test_session_grouping_service.py
+============================================================
+
+# tests/presentation/grouping/test_session_grouping_service.py
+
+from datetime import date
+
+from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
+from src.presentation.grouping.first_half_grouping_strategy import (
+    FirstHalfGroupingStrategy,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.grouping.period_grouping_strategy import (
+    PeriodGroupingStrategy,
+)
+from src.presentation.grouping.second_half_grouping_strategy import (
+    SecondHalfGroupingStrategy,
+)
+from src.presentation.grouping.session_grouping_service import (
+    SessionGroupingService,
+)
+from src.presentation.grouping.weekly_grouping_strategy import (
+    WeeklyGroupingStrategy,
+)
+
+
+def test_session_collection_is_grouped_by_week() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 10),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 1, 3),
+            ),
+            Session(
+                session_date=date(2023, 1, 8),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=WeeklyGroupingStrategy(),
+        period=GroupingPeriod.WEEK,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 1, 7)
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 1, 3),
+    )
+
+    assert groups[1].start_date == date(2023, 1, 8)
+    assert groups[1].end_date == date(2023, 1, 14)
+    assert groups[1].session_dates == (
+        date(2023, 1, 8),
+        date(2023, 1, 10),
+    )
+
+
+def test_grouping_does_not_mutate_session_collection() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 3),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+        ),
+    )
+
+    original_dates = session_collection.session_dates
+
+    service = SessionGroupingService(
+        strategy=WeeklyGroupingStrategy(),
+        period=GroupingPeriod.WEEK,
+    )
+
+    service.group(
+        session_collection,
+    )
+
+    assert session_collection.session_dates == original_dates
+
+
+def test_session_collection_is_grouped_by_month() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 31),
+            ),
+            Session(
+                session_date=date(2023, 2, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.MONTH,
+        ),
+        period=GroupingPeriod.MONTH,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 1, 31)
+
+    assert groups[1].start_date == date(2023, 2, 1)
+    assert groups[1].end_date == date(2023, 2, 28)
+
+
+def test_session_collection_is_grouped_by_first_half() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 6, 30),
+            ),
+            Session(
+                session_date=date(2024, 1, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.FIRST_HALF,
+        ),
+        period=GroupingPeriod.FIRST_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 6, 30)
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 6, 30),
+    )
+
+    assert groups[1].start_date == date(2024, 1, 1)
+    assert groups[1].end_date == date(2024, 6, 30)
+    assert groups[1].session_dates == (
+        date(2024, 1, 1),
+    )
+
+
+def test_session_collection_is_grouped_by_second_half() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 7, 1),
+            ),
+            Session(
+                session_date=date(2023, 12, 31),
+            ),
+            Session(
+                session_date=date(2024, 7, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.SECOND_HALF,
+        ),
+        period=GroupingPeriod.SECOND_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 7, 1)
+    assert groups[0].end_date == date(2023, 12, 31)
+    assert groups[0].session_dates == (
+        date(2023, 7, 1),
+        date(2023, 12, 31),
+    )
+
+    assert groups[1].start_date == date(2024, 7, 1)
+    assert groups[1].end_date == date(2024, 12, 31)
+    assert groups[1].session_dates == (
+        date(2024, 7, 1),
+    )
+
+
+def test_session_collection_is_grouped_by_year() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2022, 12, 31),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.YEAR,
+        ),
+        period=GroupingPeriod.YEAR,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2022, 1, 1)
+    assert groups[0].end_date == date(2022, 12, 31)
+
+    assert groups[1].start_date == date(2023, 1, 1)
+    assert groups[1].end_date == date(2023, 12, 31)
+
+
+def test_direct_first_half_strategy_groups_first_half_dates() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 6, 30),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=FirstHalfGroupingStrategy(),
+        period=GroupingPeriod.FIRST_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 1
+
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 6, 30),
+    )
+
+
+def test_direct_second_half_strategy_groups_second_half_dates() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 7, 1),
+            ),
+            Session(
+                session_date=date(2023, 12, 31),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=SecondHalfGroupingStrategy(),
+        period=GroupingPeriod.SECOND_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 1
+
+    assert groups[0].session_dates == (
+        date(2023, 7, 1),
+        date(2023, 12, 31),
+    )
+
+
+============================================================
+FILE: tests\presentation\grouping\test_session_group.py
+============================================================
+
+# tests/presentation/grouping/test_session_group.py
+
+from datetime import date
+
+from src.domain.models.session import Session
+from src.presentation.models.session_group import SessionGroup
+
+
+def test_session_group_sorts_sessions_chronologically() -> None:
+    sessions = (
+        Session(
+            session_date=date(2023, 1, 5),
+        ),
+        Session(
+            session_date=date(2023, 1, 1),
+        ),
+    )
+
+    group = SessionGroup(
+        start_date=date(2023, 1, 1),
+        end_date=date(2023, 1, 7),
+        sessions=sessions,
+    )
+
+    assert group.session_dates == (
+        date(2023, 1, 1),
+        date(2023, 1, 5),
+    )
+
+
+def test_session_group_returns_session_by_date() -> None:
+    session = Session(
+        session_date=date(2023, 1, 3),
+    )
+
+    group = SessionGroup(
+        start_date=date(2023, 1, 1),
+        end_date=date(2023, 1, 7),
+        sessions=(session,),
+    )
+
+    assert group.get_session(
+        date(2023, 1, 3),
+    ) is session
+
+
+============================================================
+FILE: tests\presentation\grouping\test_grouping_configuration.py
+============================================================
+
+# tests/presentation/grouping/test_grouping_configuration.py
+
+import pytest
+
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+
+
+def test_default_configuration_is_weekly_sunday_to_saturday() -> None:
+    configuration = GroupingConfiguration()
+
+    assert configuration.period is GroupingPeriod.WEEK
+    assert configuration.week_start_day == 6
+
+
+def test_daily_factory_creates_daily_configuration() -> None:
+    configuration = GroupingConfiguration.daily()
+
+    assert configuration.period is GroupingPeriod.DAY
+
+
+def test_weekly_factory_creates_weekly_configuration() -> None:
+    configuration = GroupingConfiguration.weekly()
+
+    assert configuration.period is GroupingPeriod.WEEK
+    assert configuration.week_start_day == 6
+
+
+def test_monthly_factory_creates_monthly_configuration() -> None:
+    configuration = GroupingConfiguration.monthly()
+
+    assert configuration.period is GroupingPeriod.MONTH
+
+
+def test_first_half_factory_creates_first_half_configuration() -> None:
+    configuration = GroupingConfiguration.first_half()
+
+    assert configuration.period is GroupingPeriod.FIRST_HALF
+
+
+def test_second_half_factory_creates_second_half_configuration() -> None:
+    configuration = GroupingConfiguration.second_half()
+
+    assert configuration.period is GroupingPeriod.SECOND_HALF
+
+
+def test_yearly_factory_creates_yearly_configuration() -> None:
+    configuration = GroupingConfiguration.yearly()
+
+    assert configuration.period is GroupingPeriod.YEAR
+
+
+def test_invalid_week_start_day_raises_error() -> None:
+    with pytest.raises(ValueError):
+        GroupingConfiguration(
+            week_start_day=7,
+        )
+
+
+============================================================
+FILE: tests\presentation\grouping\test_grouping_types.py
+============================================================
+
+# tests/presentation/grouping/test_grouping_types.py
+
+from src.presentation.grouping.grouping_types import GroupingPeriod
+
+
+def test_grouping_period_contains_supported_periods() -> None:
+    assert GroupingPeriod.DAY.value == "day"
+    assert GroupingPeriod.WEEK.value == "week"
+    assert GroupingPeriod.MONTH.value == "month"
+    assert GroupingPeriod.FIRST_HALF.value == "first_half"
+    assert GroupingPeriod.SECOND_HALF.value == "second_half"
+    assert GroupingPeriod.YEAR.value == "year"
+
+
+============================================================
+FILE: src\presentation\streamlit_app.py
+============================================================
+
+# src/presentation/streamlit_app.py
+
+"""
+Attendance Dashboard Application
+
+Purpose
+-------
+Application entry point for the OYBS WhatsApp Attendance Dashboard.
+
+Responsibilities
+----------------
+- Configure the Streamlit application.
+- Initialize the Presentation Context.
+- Render the application header.
+- Render the unified session navigation control.
+- Route navigation to the selected page.
+- Handle unexpected application-level exceptions.
+
+Architectural Rules
+-------------------
+This module intentionally remains thin.
+
+It must:
+- Configure the Presentation layer.
+- Delegate navigation.
+- Delegate session selection.
+- Delegate page rendering.
+
+It must not:
+- Perform business logic.
+- Access Infrastructure directly.
+- Perform analytics.
+- Parse data.
+- Build Session aggregates.
+
+Unified Session Presentation
+----------------------------
+The active SessionCollection is loaded once into the Presentation Context.
+
+The unified session selector is rendered once at the application level.
+
+Pages consume the currently selected Session through the
+Presentation Context.
+
+Presentation flow:
+
+SessionCollection
+        â†“
+Presentation Scope
+        â†“
+Session Group
+        â†“
+Daily Session
+        â†“
+Selected Session
+        â†“
+Selected Page
+        â†“
+Analytics
+
+Dependency Flow
+---------------
+Presentation
+    â†“
+Application
+    â†“
+Domain
+    â†‘
+Infrastructure
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+import traceback
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+from dotenv import load_dotenv
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation import context, navigation, theme
+from src.presentation.components.common import session_selector
+
+# ============================================================================
+# Application Entry Point
+# ============================================================================
+
+
+def main() -> None:
+    """
+    Launch the Streamlit application.
+
+    Responsibilities
+    ----------------
+    1. Configure Streamlit.
+    2. Initialize the Presentation Context.
+    3. Render the application header.
+    4. Render the unified session selector.
+    5. Determine the selected page.
+    6. Delegate page rendering.
+    """
+
+    load_dotenv()
+
+    theme.configure_page()
+
+    context.initialize()
+
+    theme.render_application_header()
+
+    if context.has_session_collection():
+
+        session_selector.render()
+
+        st.divider()
+
+    page_renderer = navigation.get_selected_page()
+
+    page_renderer()
+
+
+# ============================================================================
+# Direct Execution Support
+# ============================================================================
+
+
+def run() -> None:
+    """
+    Execute the application with error handling.
+
+    Used when this module is launched directly.
+    """
+
+    try:
+
+        main()
+
+    except Exception:
+
+        st.error(
+            "An unexpected application error occurred.",
+        )
+
+        with st.expander(
+            "Technical Details",
+        ):
+
+            st.code(
+                traceback.format_exc(),
+            )
+
+
+# ============================================================================
+# Bootstrap
+# ============================================================================
+
+
+if __name__ == "__main__":
+
+    run()
+
+
+============================================================
+FILE: tests\conftest.py
+============================================================
+

@@ -37,24 +37,18 @@ def test_clean_records_normalizes_message() -> None:
 
 
 def test_clean_records_detects_phone_number() -> None:
-    result = clean_records(
-        [_record(sender="+2348061234567")]
-    )
+    result = clean_records([_record(sender="+2348061234567")])
 
     assert result[0].sender_is_phone_number is True
 
 
 def test_clean_records_detects_deleted_message() -> None:
-    result = clean_records(
-        [_record(message="This message was deleted")]
-    )
+    result = clean_records([_record(message="This message was deleted")])
 
     assert result[0].is_deleted_message is True
 
 
 def test_clean_records_detects_media_placeholder() -> None:
-    result = clean_records(
-        [_record(message="<Media omitted>")]
-    )
+    result = clean_records([_record(message="<Media omitted>")])
 
     assert result[0].has_media_omitted is True

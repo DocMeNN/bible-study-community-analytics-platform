@@ -82,9 +82,7 @@ class ReportService:
         )
 
         self._activity_service = (
-            activity_service
-            if activity_service is not None
-            else ActivityService()
+            activity_service if activity_service is not None else ActivityService()
         )
 
         self._dashboard_service = (

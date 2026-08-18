@@ -150,10 +150,7 @@ class TestExecution:
     ) -> None:
         """execute forwards metrics to the AI service."""
 
-        metrics = (
-            "Week 1: 20 participants\n"
-            "Week 2: 25 participants"
-        )
+        metrics = "Week 1: 20 participants\nWeek 2: 25 participants"
 
         ai_service.process.return_value = "Generated trend analysis"
 
@@ -172,11 +169,7 @@ class TestExecution:
     ) -> None:
         """execute preserves multiline metrics."""
 
-        metrics = (
-            "Period | Attendance | Activities\n"
-            "Week 1 | 20 | 45\n"
-            "Week 2 | 25 | 62"
-        )
+        metrics = "Period | Attendance | Activities\nWeek 1 | 20 | 45\nWeek 2 | 25 | 62"
 
         ai_service.process.return_value = "Generated trend analysis"
 

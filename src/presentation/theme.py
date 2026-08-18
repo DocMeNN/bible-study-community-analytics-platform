@@ -43,7 +43,7 @@ APP_TITLE: Final[str] = "WhatsApp Attendance Dashboard"
 APP_ICON: Final[str] = "📊"
 
 APP_TAGLINE: Final[str] = (
-    "Transform WhatsApp chat exports into attendance " "and engagement insights."
+    "Transform WhatsApp chat exports into attendance and engagement insights."
 )
 
 # ============================================================================

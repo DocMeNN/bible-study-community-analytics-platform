@@ -58,7 +58,7 @@ def render(
     if available:
         st.success(f"AI Provider: {provider.value.capitalize()} ✓")
     else:
-        st.warning(f"AI Provider: {provider.value.capitalize()} " "(Unavailable)")
+        st.warning(f"AI Provider: {provider.value.capitalize()} (Unavailable)")
 
 
 def render_badge(

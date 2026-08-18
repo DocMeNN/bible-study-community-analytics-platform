@@ -470,9 +470,7 @@ class TestSessionExtraction:
             ],
         )
 
-        assert result.attendees == (
-            "After",
-        )
+        assert result.attendees == ("After",)
 
     def test_session_start_marker_is_excluded(
         self,

@@ -28,9 +28,7 @@ def test_openai_provider_generates_response() -> None:
     response.model = "gpt-test"
     response.choices = [
         Mock(
-            message=Mock(
-                content="Generated response"
-            ),
+            message=Mock(content="Generated response"),
             finish_reason="stop",
         )
     ]
@@ -45,9 +43,7 @@ def test_openai_provider_generates_response() -> None:
         "generate",
         return_value=response,
     ):
-        result = provider.generate(
-            AIRequest(prompt="Hello")
-        )
+        result = provider.generate(AIRequest(prompt="Hello"))
 
     assert result.content == "Generated response"
     assert result.provider == "openai"

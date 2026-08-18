@@ -1,0 +1,1409 @@
+﻿============================================================
+CP-018 — MULTI-SESSION ANALYTICS PRESENTATION INTEGRATION
+============================================================
+BATCH: cp018_01_application_domain.txt
+============================================================
+
+
+============================================================
+FILE: src\application\services\multi_session_analytics_service.py
+============================================================
+
+# src/application/services/multi_session_analytics_service.py
+
+"""
+Multi-Session Analytics Service
+
+Purpose
+-------
+Coordinate analytics across multiple Daily Session aggregates.
+
+Architectural Responsibility
+----------------------------
+The service receives a collection of Daily Sessions selected by the
+Presentation scope and coordinates analytics across them.
+
+The service does not:
+
+- perform Presentation-layer grouping;
+- own Streamlit state;
+- replace the Daily Session domain model;
+- move business rules into the Presentation layer.
+
+The architectural flow is:
+
+Selected SessionGroup
+        ↓
+SessionGroup.sessions
+        ↓
+MultiSessionAnalyticsService
+        ↓
+MultiSessionAnalyticsResult
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import date
+
+from src.application.dto.multi_session_analytics_result import (
+    MultiSessionAnalyticsResult,
+)
+from src.domain.models.session import Session
+
+
+class MultiSessionAnalyticsService:
+    """
+    Application service for analytics across multiple Daily Sessions.
+
+    Daily Session remains the atomic Domain aggregate. This service provides
+    the application-level coordination boundary for a selected multi-session
+    Presentation scope.
+    """
+
+    def analyze(
+        self,
+        sessions: Iterable[Session],
+    ) -> MultiSessionAnalyticsResult:
+        """
+        Analyze a collection of Daily Sessions.
+
+        Parameters
+        ----------
+        sessions:
+            Iterable containing the Daily Sessions included in the selected
+            Presentation scope.
+
+        Returns
+        -------
+        MultiSessionAnalyticsResult
+            Typed application-layer analytics result.
+        """
+
+        session_list = tuple(sessions)
+
+        if not session_list:
+            return MultiSessionAnalyticsResult(
+                session_count=0,
+                start_date=None,
+                end_date=None,
+                total_participants=0,
+                total_done_events=0,
+                total_activity_events=0,
+            )
+
+        ordered_sessions = tuple(
+            sorted(
+                session_list,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        participants = {
+            attendance.attendee.casefold()
+            for session in ordered_sessions
+            for attendance in session.attendance_events
+        }
+
+        total_done_events = sum(
+            len(session.done_events)
+            for session in ordered_sessions
+        )
+
+        total_activity_events = sum(
+            len(session.activity_events)
+            for session in ordered_sessions
+        )
+
+        return MultiSessionAnalyticsResult(
+            session_count=len(ordered_sessions),
+            start_date=self._session_date(ordered_sessions[0]),
+            end_date=self._session_date(ordered_sessions[-1]),
+            total_participants=len(participants),
+            total_done_events=total_done_events,
+            total_activity_events=total_activity_events,
+        )
+
+    @staticmethod
+    def _session_date(session: Session) -> date:
+        """
+        Return the date associated with a Daily Session.
+        """
+
+        return session.session_date
+
+============================================================
+FILE: src\application\dto\multi_session_analytics_result.py
+============================================================
+
+# src/application/dto/multi_session_analytics_result.py
+
+"""
+Multi-Session Analytics Result DTO
+
+Purpose
+-------
+Represent the application-layer analytics result produced when analytics are
+coordinated across multiple Daily Session aggregates.
+
+Architectural Responsibility
+----------------------------
+This DTO carries aggregated analytics from the Application layer to the
+Presentation layer.
+
+The DTO does not:
+
+- perform analytics;
+- contain business rules;
+- own Streamlit state;
+- perform Presentation-layer grouping.
+
+Daily Session remains the atomic Domain aggregate.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+
+@dataclass(frozen=True)
+class MultiSessionAnalyticsResult:
+    """
+    Immutable analytics result for multiple Daily Sessions.
+    """
+
+    session_count: int
+    start_date: date | None
+    end_date: date | None
+    total_participants: int
+    total_done_events: int
+    total_activity_events: int
+
+============================================================
+FILE: src\application\services\dashboard_service.py
+============================================================
+
+# src/application/services/dashboard_service.py
+
+"""
+Dashboard Application Service
+
+Purpose:
+    Provides dashboard-ready application use cases by orchestrating
+    attendance and activity services.
+
+Responsibilities:
+    - Build individual Session aggregates.
+    - Build multiple Session aggregates.
+    - Coordinate attendance metrics.
+    - Coordinate activity metrics.
+    - Provide dashboard-ready data.
+    - Remain free of business logic.
+
+Rules:
+    - No pandas.
+    - No Streamlit.
+    - No plotting.
+    - No reporting.
+    - No business rules.
+
+Notes:
+    - Delegates business calculations to Domain services.
+    - Delegates Session construction to application builders.
+    - Acts as the primary service consumed by the Presentation layer.
+
+Author:
+    OYBS Attendance Dashboard
+
+Created:
+    July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import date
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.builders.multi_session_builder import (
+    MultiSessionBuilder,
+)
+from src.application.services.activity_service import ActivityService
+from src.application.services.attendance_service import AttendanceService
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
+
+
+class DashboardService:
+    """
+    Application service for dashboard workflows.
+
+    Coordinates application services and builders required
+    to assemble dashboard-ready session information.
+    """
+
+    def __init__(
+        self,
+        attendance_service: AttendanceService | None = None,
+        activity_service: ActivityService | None = None,
+        multi_session_builder: MultiSessionBuilder | None = None,
+    ) -> None:
+        """
+        Initialize dashboard service.
+        """
+
+        self._attendance_service = (
+            attendance_service
+            if attendance_service is not None
+            else AttendanceService()
+        )
+
+        self._activity_service = (
+            activity_service if activity_service is not None else ActivityService()
+        )
+
+        self._multi_session_builder = (
+            multi_session_builder
+            if multi_session_builder is not None
+            else MultiSessionBuilder()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
+
+    def build_session(
+        self,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a single Session aggregate.
+        """
+
+        return self._attendance_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+    def build_sessions(
+        self,
+        messages: Iterable[Message],
+    ) -> SessionCollection:
+        """
+        Detect and build multiple Session aggregates.
+        """
+
+        return self._multi_session_builder.build(
+            messages,
+        )
+
+    # =========================================================================
+    # Dashboard Summary
+    # =========================================================================
+
+    def dashboard_summary(
+        self,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, object]:
+        """
+        Return dashboard-ready metrics.
+        """
+
+        return {
+            "session_date": session.session_date,
+            "attendance_count": session.attendee_count,
+            "attendance_rate": self._attendance_service.attendance_rate(
+                session,
+                expected_attendees,
+            ),
+            "done_count": session.done_count,
+            "activity_count": session.activity_count,
+            "attendance_events": session.attendance_count,
+            "participants": session.attendee_count,
+            "first_done": session.first_done,
+            "first_activity": session.first_activity,
+            "last_activity": session.last_activity,
+            "duration": session.duration,
+        }
+
+    # =========================================================================
+    # Attendance
+    # =========================================================================
+
+    def attendance_summary(
+        self,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, object]:
+        """
+        Return attendance metrics.
+        """
+
+        return {
+            "attendees": self._attendance_service.attendees(
+                session,
+            ),
+            "participants": self._attendance_service.participant_count(
+                session,
+            ),
+            "attendance_count": self._attendance_service.attendance_count(
+                session,
+            ),
+            "attendance_rate": self._attendance_service.attendance_rate(
+                session,
+                expected_attendees,
+            ),
+            "attendance_types": self._attendance_service.attendance_counts(
+                session,
+            ),
+        }
+
+    # =========================================================================
+    # Activity
+    # =========================================================================
+
+    def activity_summary(
+        self,
+        session: Session,
+    ) -> dict[str, object]:
+        """
+        Return activity metrics.
+        """
+
+        return {
+            "activity_count": self._activity_service.activity_count(
+                session,
+            ),
+            "activity_types": self._activity_service.activity_counts(
+                session,
+            ),
+            "first_activity": self._activity_service.first_activity(
+                session,
+            ),
+            "last_activity": self._activity_service.last_activity(
+                session,
+            ),
+        }
+
+    # =========================================================================
+    # Session Summary
+    # =========================================================================
+
+    def session_summary(
+        self,
+        session: Session,
+    ) -> dict[str, object]:
+        """
+        Return session information.
+        """
+
+        return {
+            "session_date": session.session_date,
+            "start_time": session.start_time,
+            "end_time": session.end_time,
+            "duration": session.duration,
+            "participants": session.attendee_count,
+            "attendance_events": session.attendance_count,
+            "done_events": session.done_count,
+            "activity_events": session.activity_count,
+            "total_events": session.total_events,
+        }
+
+    # =========================================================================
+    # Convenience Methods
+    # =========================================================================
+
+    def has_attendance(
+        self,
+        session: Session,
+    ) -> bool:
+        """
+        Return True if attendance exists.
+        """
+
+        return session.has_attendance
+
+    def has_activities(
+        self,
+        session: Session,
+    ) -> bool:
+        """
+        Return True if activities exist.
+        """
+
+        return session.has_activities
+
+    def is_empty(
+        self,
+        session: Session,
+    ) -> bool:
+        """
+        Return True if the session has no events.
+        """
+
+        return session.is_empty
+
+    # =========================================================================
+    # Service Accessors
+    # =========================================================================
+
+    @property
+    def attendance_service(
+        self,
+    ) -> AttendanceService:
+        """
+        Return the AttendanceService.
+        """
+
+        return self._attendance_service
+
+    @property
+    def activity_service(
+        self,
+    ) -> ActivityService:
+        """
+        Return the ActivityService.
+        """
+
+        return self._activity_service
+
+    @property
+    def multi_session_builder(
+        self,
+    ) -> MultiSessionBuilder:
+        """
+        Return the MultiSessionBuilder.
+        """
+
+        return self._multi_session_builder
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(
+        self,
+    ) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"attendance_service="
+            f"{self.attendance_service.__class__.__name__}, "
+            f"activity_service="
+            f"{self.activity_service.__class__.__name__}, "
+            f"multi_session_builder="
+            f"{self.multi_session_builder.__class__.__name__})"
+        )
+
+    def __str__(
+        self,
+    ) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+
+
+============================================================
+FILE: src\domain\models\session.py
+============================================================
+
+# src/domain/models/session.py
+
+"""
+Session Domain Model
+
+Purpose
+-------
+Represents a detected meeting/session boundary and the events
+associated with that time period.
+
+Responsibilities
+----------------
+- Aggregate attendance events detected within the session.
+- Aggregate Scripture Reading acknowledgement events detected
+  within the session.
+- Aggregate activity events detected within the session.
+- Provide session-level event counts and timeline behaviour.
+- Remain technology independent.
+
+Important Domain Rules
+----------------------
+- A session is a temporal aggregation boundary.
+- Attendance is session-related.
+- Activities are session-related.
+- A DoneEvent is a Scripture Reading acknowledgement.
+- DoneEvents are counted individually.
+- Multiple DoneEvents may exist within one session.
+- Multiple DoneEvents may belong to the same attendee.
+- DoneEvent count is NOT a unique-member count.
+- DoneEvent semantics remain independent of session identity.
+- Weekly/monthly Done totals are calculated by counting
+  DoneEvents within the reporting period.
+
+Rules
+-----
+- Immutable.
+- Aggregate Root of the Domain.
+- No UI.
+- No pandas.
+- No infrastructure dependencies.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from .activity_event import ActivityEvent
+from .attendance_event import AttendanceEvent
+from .done_event import DoneEvent
+
+# ============================================================================
+# Session
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class Session:
+    """
+    Immutable temporal session aggregate.
+
+    A Session represents a detected time boundary within which
+    related events are grouped for session-level analysis.
+
+    DoneEvents are included in the aggregate because their
+    timestamps fall within the session boundary. Their meaning,
+    however, remains independent of the session itself.
+    """
+
+    session_date: date
+
+    attendance_events: tuple[AttendanceEvent, ...] = field(
+        default_factory=tuple,
+    )
+
+    done_events: tuple[DoneEvent, ...] = field(
+        default_factory=tuple,
+    )
+
+    activity_events: tuple[ActivityEvent, ...] = field(
+        default_factory=tuple,
+    )
+
+    def __post_init__(self) -> None:
+        """
+        Validate and normalize the session.
+        """
+
+        if not isinstance(
+            self.session_date,
+            date,
+        ):
+            raise TypeError(
+                "session_date must be a date.",
+            )
+
+        object.__setattr__(
+            self,
+            "attendance_events",
+            tuple(
+                sorted(
+                    self.attendance_events,
+                    key=lambda event: event.timestamp,
+                )
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "done_events",
+            tuple(
+                sorted(
+                    self.done_events,
+                    key=lambda event: event.timestamp,
+                )
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "activity_events",
+            tuple(
+                sorted(
+                    self.activity_events,
+                    key=lambda event: event.timestamp,
+                )
+            ),
+        )
+
+    # =========================================================================
+    # Event Counts
+    # =========================================================================
+
+    @property
+    def attendance_count(self) -> int:
+        """
+        Return the number of attendance events.
+        """
+        return len(self.attendance_events)
+
+    @property
+    def done_count(self) -> int:
+        """
+        Return the number of Scripture Reading acknowledgements.
+
+        Important
+        ---------
+        This is an event count, not a unique-member count.
+
+        Therefore, if the same attendee submits two valid Done
+        acknowledgements within the session boundary, both events
+        are counted.
+        """
+        return len(self.done_events)
+
+    @property
+    def activity_count(self) -> int:
+        """
+        Return the number of activity events.
+        """
+        return len(self.activity_events)
+
+    @property
+    def total_events(self) -> int:
+        """
+        Return the total number of aggregated events.
+        """
+        return self.attendance_count + self.done_count + self.activity_count
+
+    # =========================================================================
+    # Attendance
+    # =========================================================================
+
+    @property
+    def attendees(self) -> tuple[str, ...]:
+        """
+        Return attendees in chronological order.
+        """
+        return tuple(event.attendee for event in self.attendance_events)
+
+    @property
+    def unique_attendees(self) -> tuple[str, ...]:
+        """
+        Return unique attendees while preserving first appearance order.
+        """
+
+        seen: set[str] = set()
+        attendees: list[str] = []
+
+        for event in self.attendance_events:
+            key = event.attendee.casefold()
+
+            if key not in seen:
+                seen.add(key)
+                attendees.append(event.attendee)
+
+        return tuple(attendees)
+
+    @property
+    def present_attendees(self) -> tuple[str, ...]:
+        """
+        Return attendees classified as present.
+
+        Attendance is derived from participants found in the
+        exported WhatsApp conversation.
+        """
+
+        seen: set[str] = set()
+        attendees: list[str] = []
+
+        for event in self.attendance_events:
+
+            if event.is_absent:
+                continue
+
+            key = event.attendee.casefold()
+
+            if key not in seen:
+                seen.add(key)
+                attendees.append(event.attendee)
+
+        return tuple(attendees)
+
+    @property
+    def attendee_count(self) -> int:
+        """
+        Return the number of unique attendees.
+        """
+        return len(self.unique_attendees)
+
+    @property
+    def present_count(self) -> int:
+        """
+        Return the number of unique participants present.
+        """
+        return len(self.present_attendees)
+
+    @property
+    def late_count(self) -> int:
+        """
+        Return the number of late attendance events.
+        """
+        return sum(event.is_late for event in self.attendance_events)
+
+    @property
+    def absent_count(self) -> int:
+        """
+        Return the number of explicitly absent attendance events.
+
+        WhatsApp exports do not contain a complete membership
+        register. Therefore, this counts only attendance events
+        explicitly classified as ABSENT.
+        """
+        return sum(event.is_absent for event in self.attendance_events)
+
+    @property
+    def attendance_types(self) -> dict[str, int]:
+        """
+        Return attendance classification counts.
+        """
+        return {
+            "present": self.present_count,
+            "late": self.late_count,
+            "absent": self.absent_count,
+        }
+
+    @property
+    def first_attendance(self) -> AttendanceEvent | None:
+        """
+        Return the first attendance event.
+        """
+
+        if not self.attendance_events:
+            return None
+
+        return self.attendance_events[0]
+
+    @property
+    def last_attendance(self) -> AttendanceEvent | None:
+        """
+        Return the last attendance event.
+        """
+
+        if not self.attendance_events:
+            return None
+
+        return self.attendance_events[-1]
+
+    @property
+    def first_attendee(self) -> str | None:
+        """
+        Return the first attendee.
+        """
+
+        event = self.first_attendance
+
+        if event is None:
+            return None
+
+        return event.attendee
+
+    # =========================================================================
+    # Scripture Reading Acknowledgements
+    # =========================================================================
+
+    @property
+    def first_done(self) -> DoneEvent | None:
+        """
+        Return the first Scripture Reading acknowledgement.
+        """
+
+        if not self.done_events:
+            return None
+
+        return self.done_events[0]
+
+    @property
+    def last_done(self) -> DoneEvent | None:
+        """
+        Return the last Scripture Reading acknowledgement.
+        """
+
+        if not self.done_events:
+            return None
+
+        return self.done_events[-1]
+
+    @property
+    def has_done(self) -> bool:
+        """
+        Return True if at least one DoneEvent exists.
+        """
+        return bool(self.done_events)
+
+    @property
+    def done_attendees(self) -> tuple[str, ...]:
+        """
+        Return attendees associated with DoneEvents.
+
+        Duplicates are preserved.
+
+        Example
+        -------
+        If:
+
+            Ada   -> Done
+            Ada   -> Done
+            John  -> Done
+
+        the result is:
+
+            ("Ada", "Ada", "John")
+
+        This preserves the fact that three acknowledgement
+        events occurred.
+        """
+        return tuple(event.attendee for event in self.done_events)
+
+    @property
+    def unique_done_attendees(self) -> tuple[str, ...]:
+        """
+        Return unique attendees who submitted DoneEvents.
+
+        This is intentionally separate from done_count.
+
+        done_count:
+            Number of acknowledgement events.
+
+        unique_done_attendees:
+            Number of distinct attendees associated with those events.
+        """
+
+        seen: set[str] = set()
+        attendees: list[str] = []
+
+        for event in self.done_events:
+
+            key = event.attendee.casefold()
+
+            if key not in seen:
+                seen.add(key)
+                attendees.append(event.attendee)
+
+        return tuple(attendees)
+
+    @property
+    def unique_done_attendee_count(self) -> int:
+        """
+        Return the number of unique attendees who submitted DoneEvents.
+        """
+        return len(self.unique_done_attendees)
+
+    # =========================================================================
+    # Activities
+    # =========================================================================
+
+    @property
+    def first_activity(self) -> ActivityEvent | None:
+        """
+        Return the first activity event.
+        """
+
+        if not self.activity_events:
+            return None
+
+        return self.activity_events[0]
+
+    @property
+    def last_activity(self) -> ActivityEvent | None:
+        """
+        Return the last activity event.
+        """
+
+        if not self.activity_events:
+            return None
+
+        return self.activity_events[-1]
+
+    # =========================================================================
+    # Timeline
+    # =========================================================================
+
+    @property
+    def all_events(
+        self,
+    ) -> tuple[
+        AttendanceEvent | DoneEvent | ActivityEvent,
+        ...,
+    ]:
+        """
+        Return every event in chronological order.
+        """
+
+        events = (
+            list(self.attendance_events)
+            + list(self.done_events)
+            + list(self.activity_events)
+        )
+
+        return tuple(
+            sorted(
+                events,
+                key=lambda event: event.timestamp,
+            )
+        )
+
+    @property
+    def start_time(self) -> datetime | None:
+        """
+        Return the timestamp of the first event.
+        """
+
+        if not self.all_events:
+            return None
+
+        return self.all_events[0].timestamp
+
+    @property
+    def end_time(self) -> datetime | None:
+        """
+        Return the timestamp of the last event.
+        """
+
+        if not self.all_events:
+            return None
+
+        return self.all_events[-1].timestamp
+
+    @property
+    def duration(self) -> timedelta:
+        """
+        Return the duration between the first and last events.
+        """
+
+        if self.start_time is None or self.end_time is None:
+            return timedelta(0)
+
+        return self.end_time - self.start_time
+
+    # =========================================================================
+    # Status
+    # =========================================================================
+
+    @property
+    def has_attendance(self) -> bool:
+        """
+        Return True if attendance events exist.
+        """
+        return bool(self.attendance_events)
+
+    @property
+    def has_done_events(self) -> bool:
+        """
+        Return True if Scripture Reading acknowledgement events exist.
+        """
+        return bool(self.done_events)
+
+    @property
+    def has_activities(self) -> bool:
+        """
+        Return True if activity events exist.
+        """
+        return bool(self.activity_events)
+
+    @property
+    def is_empty(self) -> bool:
+        """
+        Return True if the session contains no events.
+        """
+        return self.total_events == 0
+
+    # =========================================================================
+    # Lookup
+    # =========================================================================
+
+    def attendee_exists(
+        self,
+        attendee: str,
+    ) -> bool:
+        """
+        Return True if an attendee exists in the session.
+        """
+
+        normalized = attendee.casefold()
+
+        return any(
+            participant.casefold() == normalized
+            for participant in self.unique_attendees
+        )
+
+    def done_exists(
+        self,
+        attendee: str,
+    ) -> bool:
+        """
+        Return True if an attendee has submitted at least one DoneEvent.
+        """
+
+        normalized = attendee.casefold()
+
+        return any(
+            event.attendee.casefold() == normalized for event in self.done_events
+        )
+
+    def done_count_for(
+        self,
+        attendee: str,
+    ) -> int:
+        """
+        Return the number of DoneEvents submitted by an attendee.
+
+        This method deliberately counts events rather than unique
+        attendees.
+        """
+
+        normalized = attendee.casefold()
+
+        return sum(
+            event.attendee.casefold() == normalized for event in self.done_events
+        )
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    def to_dict(self) -> dict[str, object]:
+        """
+        Return a dictionary representation.
+        """
+
+        return {
+            "session_date": self.session_date,
+            "attendance_count": self.attendance_count,
+            "present_count": self.present_count,
+            "late_count": self.late_count,
+            "absent_count": self.absent_count,
+            "done_count": self.done_count,
+            "unique_done_attendee_count": (self.unique_done_attendee_count),
+            "activity_count": self.activity_count,
+            "attendee_count": self.attendee_count,
+            "attendance_types": self.attendance_types,
+            "total_events": self.total_events,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "duration": str(self.duration),
+        }
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __len__(self) -> int:
+        """
+        Return total number of aggregated events.
+        """
+        return self.total_events
+
+    def __bool__(self) -> bool:
+        """
+        Return True if the session contains events.
+        """
+        return not self.is_empty
+
+    def __str__(self) -> str:
+        """
+        Return readable representation.
+        """
+
+        return (
+            "Session("
+            f"date={self.session_date}, "
+            f"participants={self.attendee_count}, "
+            f"present={self.present_count}, "
+            f"done_events={self.done_count}, "
+            f"activities={self.activity_count})"
+        )
+
+
+============================================================
+FILE: src\domain\models\session_collection.py
+============================================================
+
+# src/domain/models/session_collection.py
+
+"""
+Session Collection Domain Model
+
+Purpose
+-------
+Represents an immutable collection of detected study sessions.
+
+Responsibilities
+----------------
+- Store multiple Session aggregates.
+- Provide collection-level session information.
+- Preserve chronological session ordering.
+- Remain technology independent.
+
+Domain Rules
+------------
+- A SessionCollection contains zero or more Session aggregates.
+- Sessions are stored as an immutable tuple.
+- Sessions are ordered chronologically by session date.
+- The collection does not build or detect sessions.
+- Session detection and construction remain separate responsibilities.
+
+Notes
+-----
+- Immutable.
+- Contains no UI, pandas, Streamlit, or infrastructure dependencies.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from dataclasses import dataclass
+from datetime import date
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from .session import Session
+
+# ============================================================================
+# Session Collection
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class SessionCollection:
+    """
+    Immutable collection of Session aggregates.
+    """
+
+    sessions: tuple[Session, ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize the session collection."""
+
+        if not isinstance(
+            self.sessions,
+            tuple,
+        ):
+            raise TypeError(
+                "sessions must be a tuple of Session instances.",
+            )
+
+        for session in self.sessions:
+
+            if not isinstance(
+                session,
+                Session,
+            ):
+                raise TypeError(
+                    "sessions must contain only Session instances.",
+                )
+
+        ordered_sessions = tuple(
+            sorted(
+                self.sessions,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        object.__setattr__(
+            self,
+            "sessions",
+            ordered_sessions,
+        )
+
+    # =========================================================================
+    # Collection Information
+    # =========================================================================
+
+    @property
+    def count(self) -> int:
+        """Return the number of sessions."""
+
+        return len(
+            self.sessions,
+        )
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True if the collection contains no sessions."""
+
+        return not self.sessions
+
+    @property
+    def has_sessions(self) -> bool:
+        """Return True if at least one session exists."""
+
+        return bool(
+            self.sessions,
+        )
+
+    # =========================================================================
+    # Timeline
+    # =========================================================================
+
+    @property
+    def first_session(self) -> Session | None:
+        """Return the earliest session."""
+
+        if not self.sessions:
+            return None
+
+        return self.sessions[0]
+
+    @property
+    def last_session(self) -> Session | None:
+        """Return the latest session."""
+
+        if not self.sessions:
+            return None
+
+        return self.sessions[-1]
+
+    @property
+    def session_dates(self) -> tuple[date, ...]:
+        """Return session dates in chronological order."""
+
+        return tuple(session.session_date for session in self.sessions)
+
+    @property
+    def first_date(self) -> date | None:
+        """Return the date of the first session."""
+
+        if self.first_session is None:
+            return None
+
+        return self.first_session.session_date
+
+    @property
+    def last_date(self) -> date | None:
+        """Return the date of the last session."""
+
+        if self.last_session is None:
+            return None
+
+        return self.last_session.session_date
+
+    # =========================================================================
+    # Session Access
+    # =========================================================================
+
+    def get_session(
+        self,
+        session_date: date,
+    ) -> Session | None:
+        """
+        Return the session occurring on the supplied date.
+        """
+
+        for session in self.sessions:
+
+            if session.session_date == session_date:
+                return session
+
+        return None
+
+    def contains_date(
+        self,
+        session_date: date,
+    ) -> bool:
+        """
+        Return True if a session exists on the supplied date.
+        """
+
+        return (
+            self.get_session(
+                session_date,
+            )
+            is not None
+        )
+
+    # =========================================================================
+    # Iteration
+    # =========================================================================
+
+    def __iter__(self):
+        """Iterate through sessions chronologically."""
+
+        return iter(
+            self.sessions,
+        )
+
+    def __len__(self) -> int:
+        """Return the number of sessions."""
+
+        return self.count
+
+    def __getitem__(
+        self,
+        index: int,
+    ) -> Session:
+        """Return a session by index."""
+
+        return self.sessions[index]
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    def to_dict(self) -> dict[str, object]:
+        """Return dictionary representation."""
+
+        return {
+            "count": self.count,
+            "is_empty": self.is_empty,
+            "session_dates": self.session_dates,
+            "first_date": self.first_date,
+            "last_date": self.last_date,
+            "sessions": tuple(session.to_dict() for session in self.sessions),
+        }
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __str__(self) -> str:
+        """Return a readable representation."""
+
+        return (
+            "SessionCollection("
+            f"count={self.count}, "
+            f"first_date='{self.first_date}', "
+            f"last_date='{self.last_date}')"
+        )
+

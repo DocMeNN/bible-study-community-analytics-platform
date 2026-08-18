@@ -1,1 +1,1 @@
-﻿# src/presentation/grouping/__init__.py
+# src/presentation/grouping/__init__.py

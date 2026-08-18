@@ -5,86 +5,54 @@ Multi-Session Builder
 
 Purpose
 -------
-Builds multiple Session aggregates from a complete collection of
-validated Message objects.
+Builds multiple Session aggregates from validated Message objects.
 
 Responsibilities
 ----------------
 - Validate supplied messages.
-- Detect Scripture Reading session boundaries.
-- Group messages into individual sessions.
-- Delegate each session to SessionBuilder.
-- Return a SessionCollection.
-
-Session Detection Rule
-----------------------
-A new Daily Session begins when:
-
-- a Scripture Reading marker is detected; and
-- it occurs at least 18 hours after the previous Scripture Reading marker.
-
-The first Scripture Reading marker always begins the first session.
+- Delegate session detection to SessionBuilder.
+- Build SessionCollection objects.
+- Expose session-grouping helpers for application tests.
 
 Rules
 -----
+- Application orchestration only.
+- Session detection logic lives inside SessionBuilder.
+- No duplicated business rules.
 - No pandas.
 - No Streamlit.
-- No file I/O.
 - No infrastructure parsing.
 - No analytics.
-- No UI code.
-
-Author
-------
-OYBS Attendance Dashboard
-
-Created
--------
-July 2026
 """
 
 from __future__ import annotations
 
-# ============================================================================
-# Standard Library Imports
-# ============================================================================
 from collections.abc import Iterable
-from datetime import datetime, timedelta
 
-# ============================================================================
-# Local Imports
-# ============================================================================
 from src.application.builders.session_builder import SessionBuilder
-from src.domain.constants.keywords import SESSION_START_KEYWORDS
 from src.domain.models.message import Message
+from src.domain.models.session import Session
 from src.domain.models.session_collection import SessionCollection
-
-# ============================================================================
-# Multi-Session Builder
-# ============================================================================
+from src.domain.services.session_detector import SessionDetector
 
 
 class MultiSessionBuilder:
     """
-    Build multiple Session aggregates from validated messages.
+    Builds a SessionCollection from validated messages.
     """
-
-    SESSION_GAP = timedelta(
-        hours=18,
-    )
 
     def __init__(
         self,
+        *,
+        session_detector: SessionDetector | None = None,
         session_builder: SessionBuilder | None = None,
     ) -> None:
-        """
-        Initialize the MultiSessionBuilder.
-        """
+        self._session_detector = (
+            session_detector if session_detector is not None else SessionDetector()
+        )
 
         self._session_builder = (
-            session_builder
-            if session_builder is not None
-            else SessionBuilder()
+            session_builder if session_builder is not None else SessionBuilder()
         )
 
     # =========================================================================
@@ -96,23 +64,20 @@ class MultiSessionBuilder:
         messages: Iterable[Message],
     ) -> SessionCollection:
         """
-        Build a collection of detected Sessions.
+        Build every detected Daily Session.
         """
 
-        ordered_messages = self._validate_messages(
-            messages,
-        )
+        validated_messages = self._validate_messages(messages)
 
-        session_groups = self._group_messages(
-            ordered_messages,
-        )
+        grouped_messages = self._group_messages(validated_messages)
 
-        sessions = tuple(
+        sessions: tuple[Session, ...] = tuple(
             self._session_builder.build(
-                session_date=group[0].timestamp.date(),
-                messages=group,
+                session_date=session_messages[0].timestamp.date(),
+                messages=session_messages,
             )
-            for group in session_groups
+            for session_messages in grouped_messages
+            if session_messages
         )
 
         return SessionCollection(
@@ -120,103 +85,69 @@ class MultiSessionBuilder:
         )
 
     # =========================================================================
-    # Session Detection
+    # Compatibility Helpers
     # =========================================================================
 
     def _group_messages(
         self,
-        messages: tuple[Message, ...],
+        messages: Iterable[Message],
     ) -> tuple[tuple[Message, ...], ...]:
         """
         Group messages into detected sessions.
+
+        Groups include the Scripture Reading marker because the
+        application tests assert against the raw grouped messages.
         """
+
+        validated = self._validate_messages(messages)
 
         groups: list[list[Message]] = []
         current_group: list[Message] = []
-        previous_scripture_timestamp: datetime | None = None
 
-        for message in messages:
+        previous_marker: Message | None = None
+        session_started = False
 
-            if self._is_new_session(
-                message,
-                previous_scripture_timestamp,
-            ):
+        for message in validated:
 
-                if current_group:
-                    groups.append(
-                        current_group,
-                    )
+            if self._is_session_start(message):
 
-                current_group = []
+                if not session_started:
+                    session_started = True
+                    current_group = [message]
+                    previous_marker = message
+                    continue
 
-                previous_scripture_timestamp = (
-                    message.timestamp
-                )
+                assert previous_marker is not None
 
-            if current_group:
-                current_group.append(
-                    message,
-                )
+                if (
+                    message.timestamp - previous_marker.timestamp
+                    >= self.session_detector.minimum_session_gap
+                ):
+                    groups.append(current_group)
+                    current_group = [message]
+                    previous_marker = message
+                    continue
 
-            elif self._is_session_start(
-                message,
-            ):
-                current_group.append(
-                    message,
-                )
+            if session_started:
+                current_group.append(message)
 
         if current_group:
-            groups.append(
-                current_group,
-            )
+            groups.append(current_group)
 
         return tuple(
             tuple(group)
             for group in groups
         )
 
-    def _is_new_session(
-        self,
-        message: Message,
-        previous_scripture_timestamp: datetime | None,
-    ) -> bool:
-        """
-        Return True if the message begins a new session.
-        """
-
-        if not self._is_session_start(
-            message,
-        ):
-            return False
-
-        if previous_scripture_timestamp is None:
-            return True
-
-        return (
-            message.timestamp
-            - previous_scripture_timestamp
-        ) >= self.SESSION_GAP
-
-    # =========================================================================
-    # Session Marker
-    # =========================================================================
-
     def _is_session_start(
         self,
         message: Message,
     ) -> bool:
         """
-        Return True if the message contains a Scripture Reading marker.
+        Return True when a message is a session boundary.
         """
 
-        normalized = message.content.casefold()
-
-        return bool(
-            any(
-                keyword.casefold() in normalized
-                for keyword in SESSION_START_KEYWORDS
-            )
-        )
+        return self._session_builder._is_session_start(message)  # noqa: SLF001
 
     # =========================================================================
     # Validation
@@ -230,16 +161,10 @@ class MultiSessionBuilder:
         Validate and chronologically order messages.
         """
 
-        validated = tuple(
-            messages,
-        )
+        validated = tuple(messages)
 
         for message in validated:
-
-            if not isinstance(
-                message,
-                Message,
-            ):
+            if not isinstance(message, Message):
                 raise TypeError(
                     "messages must contain only Message instances.",
                 )
@@ -256,14 +181,26 @@ class MultiSessionBuilder:
     # =========================================================================
 
     @property
+    def session_detector(
+        self,
+    ) -> SessionDetector:
+        return self._session_detector
+
+    @property
     def session_builder(
         self,
     ) -> SessionBuilder:
-        """
-        Return the SessionBuilder.
-        """
-
         return self._session_builder
+
+    # =========================================================================
+    # Metadata
+    # =========================================================================
+
+    @property
+    def name(
+        self,
+    ) -> str:
+        return self.__class__.__name__
 
     # =========================================================================
     # Dunder Methods
@@ -272,21 +209,13 @@ class MultiSessionBuilder:
     def __repr__(
         self,
     ) -> str:
-        """
-        Return the official representation.
-        """
-
         return (
             f"{self.__class__.__name__}("
-            f"session_builder="
-            f"{self.session_builder.name})"
+            f"session_detector={self.session_detector.name}, "
+            f"session_builder={self.session_builder.name})"
         )
 
     def __str__(
         self,
     ) -> str:
-        """
-        Return a readable representation.
-        """
-
         return self.__repr__()

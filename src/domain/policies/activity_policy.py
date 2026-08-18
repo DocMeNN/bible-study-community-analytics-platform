@@ -146,9 +146,7 @@ def normalize_message(
     """
 
     return "\n".join(
-        " ".join(
-            line.strip().casefold().split()
-        )
+        " ".join(line.strip().casefold().split())
         for line in content.splitlines()
         if line.strip()
     )
@@ -233,10 +231,7 @@ def _contains_scripture_reading_header(
     """
 
     for line in content.splitlines():
-
-        normalized_line = " ".join(
-            line.strip().casefold().split()
-        )
+        normalized_line = " ".join(line.strip().casefold().split())
 
         if not normalized_line:
             continue
@@ -268,9 +263,12 @@ def _contains_bible_portion(
     1 CORINTHIANS 13
     """
 
-    return BIBLE_PORTION_PATTERN.search(
-        content,
-    ) is not None
+    return (
+        BIBLE_PORTION_PATTERN.search(
+            content,
+        )
+        is not None
+    )
 
 
 def is_scripture_reading_activity(
@@ -330,10 +328,7 @@ def is_insight_activity(
         content,
     )
 
-    return (
-        normalized.startswith("insight")
-        or normalized.startswith("insights")
-    )
+    return normalized.startswith("insight") or normalized.startswith("insights")
 
 
 def is_announcement_activity(
@@ -441,13 +436,10 @@ def is_session_boundary_activity(
     Return True if the message marks a Prayer Session boundary.
     """
 
-    return (
-        is_prayer_session_opening(
-            content,
-        )
-        or is_prayer_session_closing(
-            content,
-        )
+    return is_prayer_session_opening(
+        content,
+    ) or is_prayer_session_closing(
+        content,
     )
 
 

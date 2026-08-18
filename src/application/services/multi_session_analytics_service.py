@@ -1,4 +1,4 @@
-﻿# src/application/services/multi_session_analytics_service.py
+# src/application/services/multi_session_analytics_service.py
 
 """
 Multi-Session Analytics Service
@@ -95,13 +95,11 @@ class MultiSessionAnalyticsService:
         }
 
         total_done_events = sum(
-            len(session.done_events)
-            for session in ordered_sessions
+            len(session.done_events) for session in ordered_sessions
         )
 
         total_activity_events = sum(
-            len(session.activity_events)
-            for session in ordered_sessions
+            len(session.activity_events) for session in ordered_sessions
         )
 
         return MultiSessionAnalyticsResult(

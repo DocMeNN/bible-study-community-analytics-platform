@@ -131,4 +131,4 @@ class Report:
     def __str__(self) -> str:
         """Return readable representation."""
 
-        return f"{self.title} " f"({self.attendance_percentage:.2f}% attendance)"
+        return f"{self.title} ({self.attendance_percentage:.2f}% attendance)"

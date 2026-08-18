@@ -1,0 +1,2321 @@
+
+====================================================================================================
+FILE: src/presentation/models/session_group.py
+====================================================================================================
+
+# src/presentation/models/session_group.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from src.domain.models.session import Session
+
+
+@dataclass(frozen=True, slots=True)
+class SessionGroup:
+    """
+    Immutable Presentation-layer grouping of Daily Sessions.
+    """
+
+    start_date: date
+    end_date: date
+    sessions: tuple[Session, ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize the SessionGroup."""
+
+        if self.end_date < self.start_date:
+            raise ValueError(
+                "end_date cannot be earlier than start_date.",
+            )
+
+        for session in self.sessions:
+
+            if not isinstance(
+                session,
+                Session,
+            ):
+                raise TypeError(
+                    "sessions must contain only Session instances.",
+                )
+
+        ordered_sessions = tuple(
+            sorted(
+                self.sessions,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        object.__setattr__(
+            self,
+            "sessions",
+            ordered_sessions,
+        )
+
+    @property
+    def count(self) -> int:
+        """Return the number of Daily Sessions in the group."""
+
+        return len(self.sessions)
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True when the group contains no sessions."""
+
+        return not self.sessions
+
+    @property
+    def session_dates(self) -> tuple[date, ...]:
+        """Return contained Daily Session dates."""
+
+        return tuple(session.session_date for session in self.sessions)
+
+    def get_session(
+        self,
+        session_date: date,
+    ) -> Session | None:
+        """Return the Daily Session for a date."""
+
+        for session in self.sessions:
+
+            if session.session_date == session_date:
+                return session
+
+        return None
+
+    def __iter__(self):
+        """Iterate through Daily Sessions chronologically."""
+
+        return iter(
+            self.sessions,
+        )
+
+    def __len__(self) -> int:
+        """Return the number of Daily Sessions."""
+
+        return self.count
+
+    def __getitem__(
+        self,
+        index: int,
+    ) -> Session:
+        """Return a Daily Session by index."""
+
+        return self.sessions[index]
+
+
+__all__ = [
+    "SessionGroup",
+]
+
+
+====================================================================================================
+FILE: src/domain/models/session_collection.py
+====================================================================================================
+
+# src/domain/models/session_collection.py
+
+"""
+Session Collection Domain Model
+
+Purpose
+-------
+Represents an immutable collection of detected study sessions.
+
+Responsibilities
+----------------
+- Store multiple Session aggregates.
+- Provide collection-level session information.
+- Preserve chronological session ordering.
+- Remain technology independent.
+
+Domain Rules
+------------
+- A SessionCollection contains zero or more Session aggregates.
+- Sessions are stored as an immutable tuple.
+- Sessions are ordered chronologically by session date.
+- The collection does not build or detect sessions.
+- Session detection and construction remain separate responsibilities.
+
+Notes
+-----
+- Immutable.
+- Contains no UI, pandas, Streamlit, or infrastructure dependencies.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from dataclasses import dataclass
+from datetime import date
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from .session import Session
+
+# ============================================================================
+# Session Collection
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class SessionCollection:
+    """
+    Immutable collection of Session aggregates.
+    """
+
+    sessions: tuple[Session, ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize the session collection."""
+
+        if not isinstance(
+            self.sessions,
+            tuple,
+        ):
+            raise TypeError(
+                "sessions must be a tuple of Session instances.",
+            )
+
+        for session in self.sessions:
+
+            if not isinstance(
+                session,
+                Session,
+            ):
+                raise TypeError(
+                    "sessions must contain only Session instances.",
+                )
+
+        ordered_sessions = tuple(
+            sorted(
+                self.sessions,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        object.__setattr__(
+            self,
+            "sessions",
+            ordered_sessions,
+        )
+
+    # =========================================================================
+    # Collection Information
+    # =========================================================================
+
+    @property
+    def count(self) -> int:
+        """Return the number of sessions."""
+
+        return len(
+            self.sessions,
+        )
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True if the collection contains no sessions."""
+
+        return not self.sessions
+
+    @property
+    def has_sessions(self) -> bool:
+        """Return True if at least one session exists."""
+
+        return bool(
+            self.sessions,
+        )
+
+    # =========================================================================
+    # Timeline
+    # =========================================================================
+
+    @property
+    def first_session(self) -> Session | None:
+        """Return the earliest session."""
+
+        if not self.sessions:
+            return None
+
+        return self.sessions[0]
+
+    @property
+    def last_session(self) -> Session | None:
+        """Return the latest session."""
+
+        if not self.sessions:
+            return None
+
+        return self.sessions[-1]
+
+    @property
+    def session_dates(self) -> tuple[date, ...]:
+        """Return session dates in chronological order."""
+
+        return tuple(session.session_date for session in self.sessions)
+
+    @property
+    def first_date(self) -> date | None:
+        """Return the date of the first session."""
+
+        if self.first_session is None:
+            return None
+
+        return self.first_session.session_date
+
+    @property
+    def last_date(self) -> date | None:
+        """Return the date of the last session."""
+
+        if self.last_session is None:
+            return None
+
+        return self.last_session.session_date
+
+    # =========================================================================
+    # Session Access
+    # =========================================================================
+
+    def get_session(
+        self,
+        session_date: date,
+    ) -> Session | None:
+        """
+        Return the session occurring on the supplied date.
+        """
+
+        for session in self.sessions:
+
+            if session.session_date == session_date:
+                return session
+
+        return None
+
+    def contains_date(
+        self,
+        session_date: date,
+    ) -> bool:
+        """
+        Return True if a session exists on the supplied date.
+        """
+
+        return (
+            self.get_session(
+                session_date,
+            )
+            is not None
+        )
+
+    # =========================================================================
+    # Iteration
+    # =========================================================================
+
+    def __iter__(self):
+        """Iterate through sessions chronologically."""
+
+        return iter(
+            self.sessions,
+        )
+
+    def __len__(self) -> int:
+        """Return the number of sessions."""
+
+        return self.count
+
+    def __getitem__(
+        self,
+        index: int,
+    ) -> Session:
+        """Return a session by index."""
+
+        return self.sessions[index]
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    def to_dict(self) -> dict[str, object]:
+        """Return dictionary representation."""
+
+        return {
+            "count": self.count,
+            "is_empty": self.is_empty,
+            "session_dates": self.session_dates,
+            "first_date": self.first_date,
+            "last_date": self.last_date,
+            "sessions": tuple(session.to_dict() for session in self.sessions),
+        }
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __str__(self) -> str:
+        """Return a readable representation."""
+
+        return (
+            "SessionCollection("
+            f"count={self.count}, "
+            f"first_date='{self.first_date}', "
+            f"last_date='{self.last_date}')"
+        )
+
+
+====================================================================================================
+FILE: src/domain/analytics/sessions.py
+====================================================================================================
+
+# src/domain/analytics/sessions.py
+
+"""
+Domain Session Analytics
+
+Purpose
+-------
+Provides pure business logic for analysing meeting sessions.
+
+Responsibilities
+----------------
+- Count sessions.
+- Calculate aggregate session metrics.
+- Locate earliest and latest sessions.
+- Calculate average session duration.
+- Calculate session attendance and activity metrics.
+- Remain technology independent.
+
+Notes
+-----
+- Operates only on immutable Domain models.
+- Assumes Session objects are valid.
+- No pandas.
+- No Streamlit.
+- No file I/O.
+- No database access.
+- No infrastructure dependencies.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import timedelta
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.session import Session
+
+# ============================================================================
+# Session Counts
+# ============================================================================
+
+
+def count_sessions(
+    sessions: Iterable[Session],
+) -> int:
+    """
+    Return the total number of sessions.
+    """
+
+    return sum(1 for _ in sessions)
+
+
+# ============================================================================
+# Session Retrieval
+# ============================================================================
+
+
+def get_latest_session(
+    sessions: Iterable[Session],
+) -> Session | None:
+    """
+    Return the latest session by session date.
+    """
+
+    sessions = tuple(sessions)
+
+    if not sessions:
+        return None
+
+    return max(
+        sessions,
+        key=lambda session: session.session_date,
+    )
+
+
+def get_earliest_session(
+    sessions: Iterable[Session],
+) -> Session | None:
+    """
+    Return the earliest session by session date.
+    """
+
+    sessions = tuple(sessions)
+
+    if not sessions:
+        return None
+
+    return min(
+        sessions,
+        key=lambda session: session.session_date,
+    )
+
+
+# ============================================================================
+# Duration Analytics
+# ============================================================================
+
+
+def calculate_average_duration(
+    sessions: Iterable[Session],
+) -> timedelta:
+    """
+    Return the average duration of all sessions.
+    """
+
+    sessions = tuple(sessions)
+
+    if not sessions:
+        return timedelta(0)
+
+    total_duration = sum(
+        (session.duration for session in sessions),
+        start=timedelta(0),
+    )
+
+    return total_duration / len(sessions)
+
+
+def calculate_total_duration(
+    sessions: Iterable[Session],
+) -> timedelta:
+    """
+    Return the combined duration of all sessions.
+    """
+
+    return sum(
+        (session.duration for session in sessions),
+        start=timedelta(0),
+    )
+
+
+# ============================================================================
+# Attendance Analytics
+# ============================================================================
+
+
+def total_attendance_events(
+    sessions: Iterable[Session],
+) -> int:
+    """
+    Return the total number of attendance events.
+    """
+
+    return sum(session.attendance_count for session in sessions)
+
+
+def total_unique_attendees(
+    sessions: Iterable[Session],
+) -> int:
+    """
+    Return the total number of unique attendees across sessions.
+
+    Each session's attendee count is summed independently.
+    """
+
+    return sum(session.attendee_count for session in sessions)
+
+
+# ============================================================================
+# Activity Analytics
+# ============================================================================
+
+
+def total_activity_events(
+    sessions: Iterable[Session],
+) -> int:
+    """
+    Return the total number of activity events.
+    """
+
+    return sum(session.activity_count for session in sessions)
+
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+
+def session_summary(
+    sessions: Iterable[Session],
+) -> dict[str, object]:
+    """
+    Return aggregate session analytics.
+    """
+
+    sessions = tuple(sessions)
+
+    return {
+        "session_count": len(sessions),
+        "earliest_session": get_earliest_session(sessions),
+        "latest_session": get_latest_session(sessions),
+        "total_duration": calculate_total_duration(sessions),
+        "average_duration": calculate_average_duration(sessions),
+        "total_attendance_events": total_attendance_events(sessions),
+        "total_activity_events": total_activity_events(sessions),
+    }
+
+
+====================================================================================================
+FILE: src/domain/analytics/attendance.py
+====================================================================================================
+
+# src/domain/analytics/attendance.py
+
+"""
+Domain Attendance Analytics
+
+Purpose
+-------
+Provides pure business logic for attendance and participation analytics.
+
+Domain Rule
+-----------
+Attendance is participation of any kind within a session.
+
+Therefore:
+- Any attendance event represents participation.
+- Attendance is counted as Present.
+- There is no Late classification.
+- There is no Absent classification at session participation level.
+- Done acknowledgements are analysed separately.
+- Activity events are analysed separately.
+- Attendance is based on unique participants.
+
+Responsibilities
+----------------
+- Retrieve attendance events.
+- Determine unique participants.
+- Count participation.
+- Identify first and last participants.
+- Determine whether a participant participated.
+- Provide attendance summaries.
+
+Rules
+-----
+- No pandas.
+- No Streamlit.
+- No plotting.
+- No reporting.
+- No infrastructure dependencies.
+- No UI dependencies.
+
+Notes
+-----
+- Operates only on immutable domain models.
+- Contains pure domain business logic.
+- Attendance means participation within a session.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.attendance_event import AttendanceEvent
+
+# ============================================================================
+# Retrieval
+# ============================================================================
+
+
+def get_attendance_events(
+    attendance_events: Iterable[AttendanceEvent],
+) -> tuple[AttendanceEvent, ...]:
+    """
+    Return attendance events ordered chronologically.
+    """
+
+    return tuple(
+        sorted(
+            attendance_events,
+            key=lambda event: event.timestamp,
+        )
+    )
+
+
+# ============================================================================
+# Participant Retrieval
+# ============================================================================
+
+
+def get_participants(
+    attendance_events: Iterable[AttendanceEvent],
+) -> tuple[str, ...]:
+    """
+    Return unique participants in chronological order of first participation.
+
+    Attendance is participation of any kind within a session.
+    """
+
+    seen: set[str] = set()
+    participants: list[str] = []
+
+    for event in get_attendance_events(attendance_events):
+        normalized = event.attendee.casefold()
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        participants.append(event.attendee)
+
+    return tuple(participants)
+
+
+def participant_exists(
+    attendance_events: Iterable[AttendanceEvent],
+    attendee: str,
+) -> bool:
+    """
+    Return True if the attendee participated.
+    """
+
+    normalized = attendee.casefold()
+
+    return any(
+        participant.casefold() == normalized
+        for participant in get_participants(attendance_events)
+    )
+
+
+# ============================================================================
+# Counts
+# ============================================================================
+
+
+def count_attendance_events(
+    attendance_events: Iterable[AttendanceEvent],
+) -> int:
+    """
+    Return the total number of attendance events.
+
+    This represents the number of recorded participation events.
+    """
+
+    return len(
+        get_attendance_events(
+            attendance_events,
+        )
+    )
+
+
+def count_participants(
+    attendance_events: Iterable[AttendanceEvent],
+) -> int:
+    """
+    Return the number of unique participants.
+    """
+
+    return len(
+        get_participants(
+            attendance_events,
+        )
+    )
+
+
+# ============================================================================
+# Timeline
+# ============================================================================
+
+
+def first_attendance_event(
+    attendance_events: Iterable[AttendanceEvent],
+) -> AttendanceEvent | None:
+    """
+    Return the first participation event.
+    """
+
+    events = get_attendance_events(
+        attendance_events,
+    )
+
+    if not events:
+        return None
+
+    return events[0]
+
+
+def last_attendance_event(
+    attendance_events: Iterable[AttendanceEvent],
+) -> AttendanceEvent | None:
+    """
+    Return the last participation event.
+    """
+
+    events = get_attendance_events(
+        attendance_events,
+    )
+
+    if not events:
+        return None
+
+    return events[-1]
+
+
+def first_participant(
+    attendance_events: Iterable[AttendanceEvent],
+) -> str | None:
+    """
+    Return the first participant.
+    """
+
+    event = first_attendance_event(
+        attendance_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.attendee
+
+
+def last_participant(
+    attendance_events: Iterable[AttendanceEvent],
+) -> str | None:
+    """
+    Return the last participant.
+    """
+
+    event = last_attendance_event(
+        attendance_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.attendee
+
+
+# ============================================================================
+# Attendance Status
+# ============================================================================
+
+
+def has_attendance(
+    attendance_events: Iterable[AttendanceEvent],
+) -> bool:
+    """
+    Return True if at least one participation event exists.
+    """
+
+    return (
+        count_participants(
+            attendance_events,
+        )
+        > 0
+    )
+
+
+def is_present(
+    attendance_events: Iterable[AttendanceEvent],
+    attendee: str,
+) -> bool:
+    """
+    Return True if the attendee participated in the session.
+
+    Participation is the domain definition of presence.
+    """
+
+    return participant_exists(
+        attendance_events,
+        attendee,
+    )
+
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+
+def attendance_summary(
+    attendance_events: Iterable[AttendanceEvent],
+) -> dict[str, object]:
+    """
+    Return a summary of attendance participation.
+    """
+
+    events = get_attendance_events(
+        attendance_events,
+    )
+
+    participants = get_participants(
+        events,
+    )
+
+    return {
+        "attendance_event_count": len(events),
+        "participant_count": len(participants),
+        "participants": participants,
+        "first_attendance": first_attendance_event(events),
+        "last_attendance": last_attendance_event(events),
+        "first_participant": first_participant(events),
+        "last_participant": last_participant(events),
+    }
+
+
+# ============================================================================
+# Convenience
+# ============================================================================
+
+
+def attendance_rate(
+    attendance_events: Iterable[AttendanceEvent],
+    expected_attendees: int,
+) -> float:
+    """
+    Return participation rate as a percentage.
+
+    Attendance is based on unique participants.
+    """
+
+    if expected_attendees <= 0:
+        return 0.0
+
+    return round(
+        (
+            count_participants(
+                attendance_events,
+            )
+            / expected_attendees
+        )
+        * 100,
+        2,
+    )
+
+
+====================================================================================================
+FILE: src/domain/analytics/activity.py
+====================================================================================================
+
+# src/domain/analytics/activity.py
+
+"""
+Domain Activity Analytics
+
+Purpose
+-------
+Provides pure business logic for meeting activity analytics.
+
+Responsibilities
+----------------
+- Filter activity events.
+- Count activity events.
+- Count activities by ActivityType.
+- Determine unique activity types.
+- Determine first and last activities.
+- Provide activity lookup utilities.
+- Provide activity value counts.
+- Remain technology independent.
+
+Rules
+-----
+- No pandas.
+- No Streamlit.
+- No plotting.
+- No reporting.
+- No infrastructure dependencies.
+
+Notes
+-----
+- Operates only on immutable Domain models.
+- Contains only business logic.
+- Activity analytics are session-oriented.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections import Counter
+from collections.abc import Iterable
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.enums.activity_type import ActivityType
+from src.domain.models.activity_event import ActivityEvent
+
+# ============================================================================
+# Retrieval
+# ============================================================================
+
+
+def get_activity_events(
+    activity_events: Iterable[ActivityEvent],
+) -> tuple[ActivityEvent, ...]:
+    """
+    Return activity events ordered chronologically.
+    """
+
+    return tuple(
+        sorted(
+            activity_events,
+            key=lambda event: event.timestamp,
+        )
+    )
+
+
+def get_events_by_type(
+    activity_events: Iterable[ActivityEvent],
+    activity_type: ActivityType,
+) -> tuple[ActivityEvent, ...]:
+    """
+    Return all activity events of the specified type.
+    """
+
+    return tuple(
+        event
+        for event in get_activity_events(activity_events)
+        if event.activity_type is activity_type
+    )
+
+
+# ============================================================================
+# Counts
+# ============================================================================
+
+
+def count_activity_events(
+    activity_events: Iterable[ActivityEvent],
+) -> int:
+    """
+    Return the total number of activity events.
+    """
+
+    return len(
+        get_activity_events(
+            activity_events,
+        )
+    )
+
+
+def count_activity_types(
+    activity_events: Iterable[ActivityEvent],
+) -> Counter[ActivityType]:
+    """
+    Count activity events grouped by ActivityType.
+
+    Example
+    -------
+    {
+        ActivityType.PRAYER: 2,
+        ActivityType.SCRIPTURE_READING: 1,
+        ActivityType.WORSHIP: 1,
+    }
+    """
+
+    return Counter(event.activity_type for event in activity_events)
+
+
+def activity_value_counts(
+    activity_events: Iterable[ActivityEvent],
+) -> Counter[ActivityType]:
+    """
+    Return frequency counts of each activity type.
+
+    This is the domain equivalent of value_counts
+    for activity classifications.
+    """
+
+    return count_activity_types(
+        activity_events,
+    )
+
+
+def count_unique_activity_types(
+    activity_events: Iterable[ActivityEvent],
+) -> int:
+    """
+    Return the number of unique activity types.
+    """
+
+    return len(set(event.activity_type for event in activity_events))
+
+
+# ============================================================================
+# Timeline
+# ============================================================================
+
+
+def first_activity_event(
+    activity_events: Iterable[ActivityEvent],
+) -> ActivityEvent | None:
+    """
+    Return the first recorded activity.
+    """
+
+    events = get_activity_events(
+        activity_events,
+    )
+
+    if not events:
+        return None
+
+    return events[0]
+
+
+def last_activity_event(
+    activity_events: Iterable[ActivityEvent],
+) -> ActivityEvent | None:
+    """
+    Return the last recorded activity.
+    """
+
+    events = get_activity_events(
+        activity_events,
+    )
+
+    if not events:
+        return None
+
+    return events[-1]
+
+
+# ============================================================================
+# Activity Lookup
+# ============================================================================
+
+
+def has_activity(
+    activity_events: Iterable[ActivityEvent],
+    activity_type: ActivityType,
+) -> bool:
+    """
+    Return True if the specified activity exists.
+    """
+
+    return any(event.activity_type is activity_type for event in activity_events)
+
+
+def activity_names(
+    activity_events: Iterable[ActivityEvent],
+) -> tuple[str, ...]:
+    """
+    Return activity names preserving chronological order.
+    """
+
+    return tuple(
+        event.activity_name
+        for event in get_activity_events(
+            activity_events,
+        )
+    )
+
+
+# ============================================================================
+# Unique Activities
+# ============================================================================
+
+
+def unique_activity_types(
+    activity_events: Iterable[ActivityEvent],
+) -> tuple[ActivityType, ...]:
+    """
+    Return unique ActivityTypes preserving chronological order.
+    """
+
+    seen: set[ActivityType] = set()
+
+    unique: list[ActivityType] = []
+
+    for event in get_activity_events(
+        activity_events,
+    ):
+        if event.activity_type in seen:
+            continue
+
+        seen.add(
+            event.activity_type,
+        )
+
+        unique.append(
+            event.activity_type,
+        )
+
+    return tuple(
+        unique,
+    )
+
+
+def unique_activity_names(
+    activity_events: Iterable[ActivityEvent],
+) -> tuple[str, ...]:
+    """
+    Return unique activity names preserving chronological order.
+    """
+
+    return tuple(
+        activity_type.name.replace(
+            "_",
+            " ",
+        ).title()
+        for activity_type in unique_activity_types(
+            activity_events,
+        )
+    )
+
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+
+def activity_summary(
+    activity_events: Iterable[ActivityEvent],
+) -> dict[str, object]:
+    """
+    Return a summary of activity events.
+
+    Summary includes:
+
+    - Total activity event count.
+    - Number of unique activity types.
+    - Value counts by activity type.
+    - Unique activity types.
+    - First activity.
+    - Last activity.
+    """
+
+    events = get_activity_events(
+        activity_events,
+    )
+
+    counts = activity_value_counts(
+        events,
+    )
+
+    unique_types = unique_activity_types(
+        events,
+    )
+
+    return {
+        "activity_count": len(events),
+        "unique_activity_count": len(unique_types),
+        "activity_types": counts,
+        "activity_value_counts": counts,
+        "unique_activity_types": unique_types,
+        "first_activity": first_activity_event(events),
+        "last_activity": last_activity_event(events),
+    }
+
+
+# ============================================================================
+# Convenience
+# ============================================================================
+
+
+def first_activity_type(
+    activity_events: Iterable[ActivityEvent],
+) -> ActivityType | None:
+    """
+    Return the ActivityType of the first activity.
+    """
+
+    event = first_activity_event(
+        activity_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.activity_type
+
+
+def last_activity_type(
+    activity_events: Iterable[ActivityEvent],
+) -> ActivityType | None:
+    """
+    Return the ActivityType of the last activity.
+    """
+
+    event = last_activity_event(
+        activity_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.activity_type
+
+
+def first_activity_name(
+    activity_events: Iterable[ActivityEvent],
+) -> str | None:
+    """
+    Return the name of the first activity.
+    """
+
+    event = first_activity_event(
+        activity_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.activity_name
+
+
+def last_activity_name(
+    activity_events: Iterable[ActivityEvent],
+) -> str | None:
+    """
+    Return the name of the last activity.
+    """
+
+    event = last_activity_event(
+        activity_events,
+    )
+
+    if event is None:
+        return None
+
+    return event.activity_name
+
+
+====================================================================================================
+FILE: src/domain/analytics/done.py
+====================================================================================================
+
+# src/domain/analytics/done.py
+
+"""
+Domain Done Analytics
+
+Purpose
+-------
+Provides business logic for Scripture Reading acknowledgement analytics.
+
+Responsibilities
+----------------
+- Retrieve Done acknowledgement events.
+- Count Done acknowledgements.
+- Count acknowledgements by member.
+- Rank members by acknowledgement count.
+- Support reporting-period analysis.
+- Preserve every Done acknowledgement as an independent event.
+
+Domain Rules
+------------
+- A DoneEvent represents one Scripture Reading acknowledgement.
+- Every DoneEvent counts independently.
+- Multiple DoneEvents from the same member must not be deduplicated.
+- Done acknowledgements are independent of session boundaries.
+- Session detection determines when a Scripture Reading activity occurs,
+  but Done acknowledgements may refer to the current or a previous reading.
+- Weekly and monthly Done totals are therefore based on the reporting period,
+  not on session membership.
+
+Notes
+-----
+- Pure domain analytics.
+- No pandas.
+- No Streamlit.
+- No database access.
+- No file I/O.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections import Counter
+from collections.abc import Iterable
+from datetime import date, datetime
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.done_event import DoneEvent
+
+# ============================================================================
+# Retrieval
+# ============================================================================
+
+
+def get_done_events(
+    done_events: Iterable[DoneEvent],
+) -> tuple[DoneEvent, ...]:
+    """
+    Return Done events ordered chronologically.
+    """
+
+    return tuple(
+        sorted(
+            done_events,
+            key=lambda event: event.timestamp,
+        )
+    )
+
+
+def get_done_events_for_member(
+    done_events: Iterable[DoneEvent],
+    attendee: str,
+) -> tuple[DoneEvent, ...]:
+    """
+    Return all Done events belonging to a member.
+
+    Matching is case-insensitive.
+    """
+
+    normalized = attendee.casefold()
+
+    return tuple(
+        event
+        for event in get_done_events(done_events)
+        if event.attendee.casefold() == normalized
+    )
+
+
+def get_done_events_between(
+    done_events: Iterable[DoneEvent],
+    start: datetime,
+    end: datetime,
+) -> tuple[DoneEvent, ...]:
+    """
+    Return Done events within a datetime range.
+
+    The range is inclusive at both boundaries.
+    """
+
+    return tuple(
+        event
+        for event in get_done_events(done_events)
+        if start <= event.timestamp <= end
+    )
+
+
+def get_done_events_on_date(
+    done_events: Iterable[DoneEvent],
+    event_date: date,
+) -> tuple[DoneEvent, ...]:
+    """
+    Return Done events recorded on a specific date.
+    """
+
+    return tuple(
+        event
+        for event in get_done_events(done_events)
+        if event.event_date == event_date
+    )
+
+
+# ============================================================================
+# Counts
+# ============================================================================
+
+
+def count_done_events(
+    done_events: Iterable[DoneEvent],
+) -> int:
+    """
+    Return the total number of Done acknowledgements.
+
+    Every DoneEvent counts independently.
+    """
+
+    return len(get_done_events(done_events))
+
+
+def count_done_for_member(
+    done_events: Iterable[DoneEvent],
+    attendee: str,
+) -> int:
+    """
+    Return the total number of Done acknowledgements
+    recorded by a member.
+    """
+
+    return len(
+        get_done_events_for_member(
+            done_events,
+            attendee,
+        )
+    )
+
+
+def count_done_by_member(
+    done_events: Iterable[DoneEvent],
+) -> Counter[str]:
+    """
+    Count Done acknowledgements by member.
+
+    Member names are normalized for case-insensitive
+    counting while preserving the first encountered
+    display name.
+    """
+
+    counts: Counter[str] = Counter()
+    display_names: dict[str, str] = {}
+
+    for event in get_done_events(done_events):
+        key = event.attendee.casefold()
+
+        if key not in display_names:
+            display_names[key] = event.attendee
+
+        counts[display_names[key]] += 1
+
+    return counts
+
+
+def unique_done_member_count(
+    done_events: Iterable[DoneEvent],
+) -> int:
+    """
+    Return the number of unique members with at least
+    one Done acknowledgement.
+    """
+
+    return len(count_done_by_member(done_events))
+
+
+# ============================================================================
+# Ranking
+# ============================================================================
+
+
+def rank_members_by_done_count(
+    done_events: Iterable[DoneEvent],
+) -> tuple[tuple[str, int], ...]:
+    """
+    Rank members by total Done acknowledgements.
+
+    Members with equal counts are ordered alphabetically.
+    """
+
+    counts = count_done_by_member(done_events)
+
+    return tuple(
+        sorted(
+            counts.items(),
+            key=lambda item: (
+                -item[1],
+                item[0].casefold(),
+            ),
+        )
+    )
+
+
+def top_done_members(
+    done_events: Iterable[DoneEvent],
+    limit: int = 10,
+) -> tuple[tuple[str, int], ...]:
+    """
+    Return the members with the highest Done counts.
+    """
+
+    if limit < 1:
+        raise ValueError("limit must be greater than zero.")
+
+    return rank_members_by_done_count(done_events)[:limit]
+
+
+# ============================================================================
+# Period Analytics
+# ============================================================================
+
+
+def done_count_by_date(
+    done_events: Iterable[DoneEvent],
+) -> Counter[date]:
+    """
+    Count Done acknowledgements by calendar date.
+    """
+
+    return Counter(event.event_date for event in done_events)
+
+
+def done_count_by_period(
+    done_events: Iterable[DoneEvent],
+    start_date: date,
+    end_date: date,
+) -> int:
+    """
+    Return the number of Done acknowledgements
+    within an inclusive date range.
+
+    This is independent of session boundaries.
+    """
+
+    if start_date > end_date:
+        raise ValueError("start_date cannot be later than end_date.")
+
+    return sum(1 for event in done_events if start_date <= event.event_date <= end_date)
+
+
+def done_count_by_member_for_period(
+    done_events: Iterable[DoneEvent],
+    start_date: date,
+    end_date: date,
+) -> Counter[str]:
+    """
+    Count Done acknowledgements by member
+    within an inclusive reporting period.
+
+    Every acknowledgement is counted independently.
+    """
+
+    if start_date > end_date:
+        raise ValueError("start_date cannot be later than end_date.")
+
+    return count_done_by_member(
+        event for event in done_events if start_date <= event.event_date <= end_date
+    )
+
+
+# ============================================================================
+# Summary
+# ============================================================================
+
+
+def done_summary(
+    done_events: Iterable[DoneEvent],
+) -> dict[str, object]:
+    """
+    Return a summary of Done acknowledgement analytics.
+    """
+
+    events = get_done_events(done_events)
+
+    return {
+        "done_count": len(events),
+        "unique_member_count": unique_done_member_count(events),
+        "done_by_member": count_done_by_member(events),
+        "done_by_date": done_count_by_date(events),
+        "first_done": events[0] if events else None,
+        "last_done": events[-1] if events else None,
+    }
+
+
+====================================================================================================
+FILE: src/domain/analytics/statistics.py
+====================================================================================================
+
+# src/domain/analytics/statistics.py
+
+"""
+Domain Statistics Analytics
+
+Purpose
+-------
+Provides aggregate statistics across multiple attendance summaries.
+
+Responsibilities
+----------------
+- Calculate aggregate attendance statistics.
+- Identify highest and lowest attendance sessions.
+- Count aggregate attendance and activity events.
+- Identify sessions achieving quorum.
+- Identify sessions with full attendance.
+
+Notes
+-----
+- Pure domain analytics.
+- No pandas.
+- No Streamlit.
+- No database access.
+- No file I/O.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.attendance_summary import AttendanceSummary
+
+# ============================================================================
+# Attendance Statistics
+# ============================================================================
+
+
+def average_attendance(
+    summaries: Iterable[AttendanceSummary],
+) -> float:
+    """
+    Return the average attendance percentage across sessions.
+    """
+
+    summaries = tuple(summaries)
+
+    if not summaries:
+        return 0.0
+
+    return round(
+        sum(summary.attendance_percentage for summary in summaries) / len(summaries),
+        2,
+    )
+
+
+def highest_attendance(
+    summaries: Iterable[AttendanceSummary],
+) -> AttendanceSummary | None:
+    """
+    Return the session with the highest attendance percentage.
+    """
+
+    summaries = tuple(summaries)
+
+    if not summaries:
+        return None
+
+    return max(
+        summaries,
+        key=lambda summary: summary.attendance_percentage,
+    )
+
+
+def lowest_attendance(
+    summaries: Iterable[AttendanceSummary],
+) -> AttendanceSummary | None:
+    """
+    Return the session with the lowest attendance percentage.
+    """
+
+    summaries = tuple(summaries)
+
+    if not summaries:
+        return None
+
+    return min(
+        summaries,
+        key=lambda summary: summary.attendance_percentage,
+    )
+
+
+# ============================================================================
+# Attendance Totals
+# ============================================================================
+
+
+def total_expected_attendees(
+    summaries: Iterable[AttendanceSummary],
+) -> int:
+    """
+    Return the total expected attendees across sessions.
+    """
+
+    return sum(summary.expected_attendees for summary in summaries)
+
+
+def total_present(
+    summaries: Iterable[AttendanceSummary],
+) -> int:
+    """
+    Return the total number of attendees present.
+    """
+
+    return sum(summary.present_count for summary in summaries)
+
+
+def total_absent(
+    summaries: Iterable[AttendanceSummary],
+) -> int:
+    """
+    Return the total number of absentees.
+    """
+
+    return sum(summary.absent_count for summary in summaries)
+
+
+# ============================================================================
+# Event Totals
+# ============================================================================
+
+
+def total_activities(
+    summaries: Iterable[AttendanceSummary],
+) -> int:
+    """
+    Return the total recorded activity events.
+    """
+
+    return sum(summary.activity_event_count for summary in summaries)
+
+
+def total_attendance_events(
+    summaries: Iterable[AttendanceSummary],
+) -> int:
+    """
+    Return the total attendance events.
+    """
+
+    return sum(summary.attendance_event_count for summary in summaries)
+
+
+# ============================================================================
+# Session Classification
+# ============================================================================
+
+
+def sessions_with_quorum(
+    summaries: Iterable[AttendanceSummary],
+) -> tuple[AttendanceSummary, ...]:
+    """
+    Return all sessions that achieved quorum.
+    """
+
+    return tuple(summary for summary in summaries if summary.has_quorum)
+
+
+def full_attendance_sessions(
+    summaries: Iterable[AttendanceSummary],
+) -> tuple[AttendanceSummary, ...]:
+    """
+    Return all sessions with full attendance.
+    """
+
+    return tuple(summary for summary in summaries if summary.is_full_attendance)
+
+
+====================================================================================================
+FILE: src/domain/analytics/comparisons.py
+====================================================================================================
+
+# src/domain/analytics/comparisons.py
+
+"""
+Domain Comparison Analytics
+
+Purpose
+-------
+Provides pure business logic for comparing attendance participation
+and session metrics across multiple sessions.
+
+Domain Rules
+------------
+- Attendance is participation of any kind within a session.
+- A participant is Present when they participate.
+- There is no Late classification.
+- There is no Absent classification at session participation level.
+- Attendance comparisons therefore focus on participation.
+
+Responsibilities
+----------------
+- Compare attendance participation between sessions.
+- Identify participation improvements and declines.
+- Compare expected attendee counts.
+- Compare present participant counts.
+- Find best and worst performing sessions.
+- Support trend analysis for higher application layers.
+
+Rules
+-----
+- No pandas.
+- No Streamlit.
+- No database access.
+- No file I/O.
+- No infrastructure dependencies.
+- No presentation logic.
+
+Notes
+-----
+- Pure domain logic.
+- Operates on immutable domain models.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.attendance_summary import AttendanceSummary
+
+# ============================================================================
+# Attendance Comparison
+# ============================================================================
+
+
+def compare_attendance(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> float:
+    """
+    Return the percentage-point difference in participation.
+
+    Positive values indicate improvement.
+    Negative values indicate decline.
+    Zero indicates no change.
+    """
+
+    return round(
+        second.attendance_percentage - first.attendance_percentage,
+        2,
+    )
+
+
+def attendance_improved(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> bool:
+    """
+    Return True if participation improved.
+    """
+
+    return second.attendance_percentage > first.attendance_percentage
+
+
+def attendance_declined(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> bool:
+    """
+    Return True if participation declined.
+    """
+
+    return second.attendance_percentage < first.attendance_percentage
+
+
+def attendance_unchanged(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> bool:
+    """
+    Return True if participation remained unchanged.
+    """
+
+    return second.attendance_percentage == first.attendance_percentage
+
+
+# ============================================================================
+# Session Performance
+# ============================================================================
+
+
+def best_session(
+    summaries: Iterable[AttendanceSummary],
+) -> AttendanceSummary | None:
+    """
+    Return the session with the highest participation percentage.
+    """
+
+    summaries = tuple(summaries)
+
+    if not summaries:
+        return None
+
+    return max(
+        summaries,
+        key=lambda summary: summary.attendance_percentage,
+    )
+
+
+def worst_session(
+    summaries: Iterable[AttendanceSummary],
+) -> AttendanceSummary | None:
+    """
+    Return the session with the lowest participation percentage.
+    """
+
+    summaries = tuple(summaries)
+
+    if not summaries:
+        return None
+
+    return min(
+        summaries,
+        key=lambda summary: summary.attendance_percentage,
+    )
+
+
+# ============================================================================
+# Expected Attendee Comparison
+# ============================================================================
+
+
+def compare_expected_attendance(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> int:
+    """
+    Return the difference in expected attendee counts.
+
+    Positive values indicate an increase.
+    Negative values indicate a decrease.
+    """
+
+    return second.expected_attendees - first.expected_attendees
+
+
+# ============================================================================
+# Participation Comparison
+# ============================================================================
+
+
+def compare_present_count(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> int:
+    """
+    Return the difference in unique participants.
+
+    Positive values indicate more participants
+    in the second session.
+    """
+
+    return second.present_count - first.present_count
+
+
+# ============================================================================
+# Composite Comparison
+# ============================================================================
+
+
+def compare_sessions(
+    first: AttendanceSummary,
+    second: AttendanceSummary,
+) -> dict[str, object]:
+    """
+    Return a complete comparison between two sessions.
+    """
+
+    percentage_difference = compare_attendance(
+        first,
+        second,
+    )
+
+    return {
+        "first_session_date": first.session_date,
+        "second_session_date": second.session_date,
+        "attendance_difference": percentage_difference,
+        "attendance_improved": percentage_difference > 0,
+        "attendance_declined": percentage_difference < 0,
+        "attendance_unchanged": percentage_difference == 0,
+        "expected_attendees_difference": compare_expected_attendance(
+            first,
+            second,
+        ),
+        "present_count_difference": compare_present_count(
+            first,
+            second,
+        ),
+    }
+
+
+====================================================================================================
+FILE: src/application/builders/multi_session_builder.py
+====================================================================================================
+
+# src/application/builders/multi_session_builder.py
+
+"""
+Multi-Session Builder
+
+Purpose
+-------
+Builds multiple Session aggregates from a complete collection of
+validated Message objects.
+
+Responsibilities
+----------------
+- Validate supplied messages.
+- Detect Scripture Reading session boundaries.
+- Group messages into individual sessions.
+- Delegate each session to SessionBuilder.
+- Return a SessionCollection.
+
+Session Detection Rule
+----------------------
+A new Daily Session begins when:
+
+- a Scripture Reading marker is detected; and
+- it occurs at least 18 hours after the previous Scripture Reading marker.
+
+The first Scripture Reading marker always begins the first session.
+
+Rules
+-----
+- No pandas.
+- No Streamlit.
+- No file I/O.
+- No infrastructure parsing.
+- No analytics.
+- No UI code.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.builders.session_builder import SessionBuilder
+from src.domain.constants.keywords import SESSION_START_KEYWORDS
+from src.domain.models.message import Message
+from src.domain.models.session_collection import SessionCollection
+
+# ============================================================================
+# Multi-Session Builder
+# ============================================================================
+
+
+class MultiSessionBuilder:
+    """
+    Build multiple Session aggregates from validated messages.
+    """
+
+    SESSION_GAP = timedelta(
+        hours=18,
+    )
+
+    def __init__(
+        self,
+        session_builder: SessionBuilder | None = None,
+    ) -> None:
+        """
+        Initialize the MultiSessionBuilder.
+        """
+
+        self._session_builder = (
+            session_builder if session_builder is not None else SessionBuilder()
+        )
+
+    # =========================================================================
+    # Public Builder
+    # =========================================================================
+
+    def build(
+        self,
+        messages: Iterable[Message],
+    ) -> SessionCollection:
+        """
+        Build a collection of detected Sessions.
+        """
+
+        ordered_messages = self._validate_messages(
+            messages,
+        )
+
+        session_groups = self._group_messages(
+            ordered_messages,
+        )
+
+        sessions = tuple(
+            self._session_builder.build(
+                session_date=group[0].timestamp.date(),
+                messages=group,
+            )
+            for group in session_groups
+        )
+
+        return SessionCollection(
+            sessions=sessions,
+        )
+
+    # =========================================================================
+    # Session Detection
+    # =========================================================================
+
+    def _group_messages(
+        self,
+        messages: tuple[Message, ...],
+    ) -> tuple[tuple[Message, ...], ...]:
+        """
+        Group messages into detected sessions.
+        """
+
+        groups: list[list[Message]] = []
+        current_group: list[Message] = []
+        previous_scripture_timestamp: datetime | None = None
+
+        for message in messages:
+
+            if self._is_new_session(
+                message,
+                previous_scripture_timestamp,
+            ):
+
+                if current_group:
+                    groups.append(
+                        current_group,
+                    )
+
+                current_group = []
+
+                previous_scripture_timestamp = message.timestamp
+
+            if current_group:
+                current_group.append(
+                    message,
+                )
+
+            elif self._is_session_start(
+                message,
+            ):
+                current_group.append(
+                    message,
+                )
+
+        if current_group:
+            groups.append(
+                current_group,
+            )
+
+        return tuple(tuple(group) for group in groups)
+
+    def _is_new_session(
+        self,
+        message: Message,
+        previous_scripture_timestamp: datetime | None,
+    ) -> bool:
+        """
+        Return True if the message begins a new session.
+        """
+
+        if not self._is_session_start(
+            message,
+        ):
+            return False
+
+        if previous_scripture_timestamp is None:
+            return True
+
+        return (message.timestamp - previous_scripture_timestamp) >= self.SESSION_GAP
+
+    # =========================================================================
+    # Session Marker
+    # =========================================================================
+
+    def _is_session_start(
+        self,
+        message: Message,
+    ) -> bool:
+        """
+        Return True if the message contains a Scripture Reading marker.
+        """
+
+        normalized = message.content.casefold()
+
+        return bool(
+            any(keyword.casefold() in normalized for keyword in SESSION_START_KEYWORDS)
+        )
+
+    # =========================================================================
+    # Validation
+    # =========================================================================
+
+    def _validate_messages(
+        self,
+        messages: Iterable[Message],
+    ) -> tuple[Message, ...]:
+        """
+        Validate and chronologically order messages.
+        """
+
+        validated = tuple(
+            messages,
+        )
+
+        for message in validated:
+
+            if not isinstance(
+                message,
+                Message,
+            ):
+                raise TypeError(
+                    "messages must contain only Message instances.",
+                )
+
+        return tuple(
+            sorted(
+                validated,
+                key=lambda message: message.timestamp,
+            )
+        )
+
+    # =========================================================================
+    # Accessors
+    # =========================================================================
+
+    @property
+    def session_builder(
+        self,
+    ) -> SessionBuilder:
+        """
+        Return the SessionBuilder.
+        """
+
+        return self._session_builder
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(
+        self,
+    ) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"session_builder="
+            f"{self.session_builder.name})"
+        )
+
+    def __str__(
+        self,
+    ) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+

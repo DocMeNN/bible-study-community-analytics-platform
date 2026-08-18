@@ -110,7 +110,7 @@ class SessionBuilder:
         """
         Build one Session aggregate.
 
-        This preserves the existing single-session workflow.
+        Preserves the legacy single-session workflow.
         """
 
         ordered_messages = self._validate_messages(
@@ -131,13 +131,7 @@ class SessionBuilder:
         messages: Iterable[Message],
     ) -> tuple[Session, ...]:
         """
-        Detect and build all sessions from a message stream.
-
-        The first Scripture Reading marker starts the first session.
-
-        A subsequent Scripture Reading marker starts a new session
-        only when it occurs at least 18 hours after the previous
-        Scripture Reading marker.
+        Detect and build every Daily Session.
         """
 
         ordered_messages = self._validate_messages(
@@ -167,7 +161,7 @@ class SessionBuilder:
         messages: Iterable[Message],
     ) -> Session:
         """
-        Build a Session from already-extracted session messages.
+        Build one immutable Session aggregate.
         """
 
         ordered_messages = self._validate_messages(
@@ -202,10 +196,10 @@ class SessionBuilder:
         messages: tuple[Message, ...],
     ) -> tuple[tuple[Message, ...], ...]:
         """
-        Group messages into multiple detected sessions.
+        Split a chronological message stream into Daily Sessions.
 
-        Scripture Reading markers are boundaries and are excluded
-        from the resulting session message groups.
+        Scripture Reading markers are treated as boundaries and are
+        excluded from the resulting session message collections.
         """
 
         sessions: list[list[Message]] = []
@@ -216,24 +210,19 @@ class SessionBuilder:
 
         for message in messages:
 
-            if self._is_session_start(message):
-
+            if self._is_session_start(
+                message,
+            ):
                 if not session_started:
 
                     session_started = True
-
-                    previous_scripture_timestamp = (
-                        message.timestamp
-                    )
+                    previous_scripture_timestamp = message.timestamp
 
                     continue
 
                 if (
                     previous_scripture_timestamp is not None
-                    and (
-                        message.timestamp
-                        - previous_scripture_timestamp
-                    )
+                    and (message.timestamp - previous_scripture_timestamp)
                     >= SESSION_MINIMUM_GAP
                 ):
 
@@ -244,11 +233,7 @@ class SessionBuilder:
 
                     current_session = []
 
-                    previous_scripture_timestamp = (
-                        message.timestamp
-                    )
-
-                    continue
+                    previous_scripture_timestamp = message.timestamp
 
             if session_started:
                 current_session.append(
@@ -260,10 +245,7 @@ class SessionBuilder:
                 current_session,
             )
 
-        return tuple(
-            tuple(session)
-            for session in sessions
-        )
+        return tuple(tuple(session) for session in sessions)
 
     # ========================================================================
     # Attendance Construction
@@ -414,8 +396,7 @@ class SessionBuilder:
         normalized = message.content.strip().casefold()
 
         return any(
-            keyword.casefold() in normalized
-            for keyword in OPENING_PRAYER_KEYWORDS
+            keyword.casefold() in normalized for keyword in OPENING_PRAYER_KEYWORDS
         )
 
     def _is_prayer_session_closing(
@@ -429,8 +410,7 @@ class SessionBuilder:
         normalized = message.content.strip().casefold()
 
         return any(
-            keyword.casefold() in normalized
-            for keyword in CLOSING_PRAYER_KEYWORDS
+            keyword.casefold() in normalized for keyword in CLOSING_PRAYER_KEYWORDS
         )
 
     # ========================================================================
@@ -447,10 +427,7 @@ class SessionBuilder:
 
         normalized = message.content.strip().casefold()
 
-        return normalized in {
-            keyword.casefold()
-            for keyword in DONE_KEYWORDS
-        }
+        return normalized in {keyword.casefold() for keyword in DONE_KEYWORDS}
 
     def _is_session_start(
         self,
@@ -463,11 +440,11 @@ class SessionBuilder:
         normalized = message.content.strip().casefold()
 
         return any(
-            keyword.casefold() in normalized
-            for keyword in SESSION_START_KEYWORDS
+            keyword.casefold() in normalized for keyword in SESSION_START_KEYWORDS
         )
 
-    # ========================================================================
+        # ========================================================================
+
     # Validation
     # ========================================================================
 
@@ -509,7 +486,10 @@ class SessionBuilder:
         messages: tuple[Message, ...],
     ) -> tuple[Message, ...]:
         """
-        Extract messages after the first session marker.
+        Extract messages belonging to the first detected session.
+
+        Preserves backward compatibility for the existing
+        single-session workflow.
         """
 
         session_started = False

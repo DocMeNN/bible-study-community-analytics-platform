@@ -36,11 +36,7 @@ def test_parse_iphone_message() -> None:
 
 
 def test_parse_multiline_message() -> None:
-    raw_text = (
-        "2/8/26, 11:02 - John: First line\n"
-        "Second line\n"
-        "Third line"
-    )
+    raw_text = "2/8/26, 11:02 - John: First line\nSecond line\nThird line"
 
     records = parse_whatsapp_chat(raw_text)
 
@@ -49,10 +45,7 @@ def test_parse_multiline_message() -> None:
 
 
 def test_parse_multiple_messages() -> None:
-    raw_text = (
-        "2/8/26, 11:02 - John: Hello\n"
-        "2/8/26, 11:03 - Jane: Hi"
-    )
+    raw_text = "2/8/26, 11:02 - John: Hello\n2/8/26, 11:03 - Jane: Hi"
 
     records = parse_whatsapp_chat(raw_text)
 

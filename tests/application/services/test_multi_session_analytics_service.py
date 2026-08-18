@@ -43,13 +43,11 @@ from __future__ import annotations
 # ============================================================================
 # Standard Library Imports
 # ============================================================================
-
 from datetime import date, datetime
 
 # ============================================================================
 # Local Imports
 # ============================================================================
-
 from src.application.dto.multi_session_analytics_result import (
     MultiSessionAnalyticsResult,
 )
@@ -62,7 +60,6 @@ from src.domain.models.attendance_event import AttendanceEvent
 from src.domain.models.done_event import DoneEvent
 from src.domain.models.message import Message
 from src.domain.models.session import Session
-
 
 # ============================================================================
 # Test Helpers
@@ -672,10 +669,7 @@ class TestIterableInput:
         service = MultiSessionAnalyticsService()
 
         result = service.analyze(
-            (
-                item
-                for item in sessions
-            ),
+            (item for item in sessions),
         )
 
         assert result.session_count == 2

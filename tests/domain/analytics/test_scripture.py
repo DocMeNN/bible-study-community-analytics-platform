@@ -190,12 +190,15 @@ def test_first_scripture_event_returns_earliest_event() -> None:
         hour=12,
     )
 
-    assert first_scripture_event(
-        (
-            second,
-            first,
+    assert (
+        first_scripture_event(
+            (
+                second,
+                first,
+            )
         )
-    ) == first
+        == first
+    )
 
 
 def test_last_scripture_event_returns_latest_event() -> None:
@@ -213,12 +216,15 @@ def test_last_scripture_event_returns_latest_event() -> None:
         hour=12,
     )
 
-    assert last_scripture_event(
-        (
-            first,
-            last,
+    assert (
+        last_scripture_event(
+            (
+                first,
+                last,
+            )
         )
-    ) == last
+        == last
+    )
 
 
 def test_first_and_last_scripture_event_return_none_for_empty_input() -> None:
@@ -277,10 +283,13 @@ def test_has_scripture_reading_on_date_returns_true_for_matching_date() -> None:
         day=22,
     )
 
-    assert has_scripture_reading_on_date(
-        (event,),
-        event.event_date,
-    ) is True
+    assert (
+        has_scripture_reading_on_date(
+            (event,),
+            event.event_date,
+        )
+        is True
+    )
 
 
 def test_has_scripture_reading_on_date_returns_false_without_match() -> None:
@@ -292,12 +301,15 @@ def test_has_scripture_reading_on_date_returns_false_without_match() -> None:
         day=22,
     )
 
-    assert has_scripture_reading_on_date(
-        (event,),
-        event.event_date.replace(
-            day=23,
-        ),
-    ) is False
+    assert (
+        has_scripture_reading_on_date(
+            (event,),
+            event.event_date.replace(
+                day=23,
+            ),
+        )
+        is False
+    )
 
 
 # ============================================================================

@@ -315,9 +315,12 @@ class TestActivityEvents:
 
         service = ActivityService()
 
-        assert service.activity_count(
-            session,
-        ) == 3
+        assert (
+            service.activity_count(
+                session,
+            )
+            == 3
+        )
 
     def test_activity_count_returns_zero_for_empty_session(self) -> None:
         """
@@ -334,9 +337,12 @@ class TestActivityEvents:
             ),
         )
 
-        assert service.activity_count(
-            session,
-        ) == 0
+        assert (
+            service.activity_count(
+                session,
+            )
+            == 0
+        )
 
 
 # ============================================================================
@@ -395,9 +401,12 @@ class TestActivityCounts:
             ),
         )
 
-        assert service.activity_counts(
-            session,
-        ) == {}
+        assert (
+            service.activity_counts(
+                session,
+            )
+            == {}
+        )
 
 
 # ============================================================================
@@ -434,9 +443,12 @@ class TestActivityBoundaries:
 
         service = ActivityService()
 
-        assert service.first_activity(
-            session,
-        ) is first
+        assert (
+            service.first_activity(
+                session,
+            )
+            is first
+        )
 
     def test_first_activity_returns_none_when_no_events_exist(self) -> None:
         """
@@ -453,9 +465,12 @@ class TestActivityBoundaries:
             ),
         )
 
-        assert service.first_activity(
-            session,
-        ) is None
+        assert (
+            service.first_activity(
+                session,
+            )
+            is None
+        )
 
     def test_last_activity_returns_latest_event(self) -> None:
         """
@@ -481,9 +496,12 @@ class TestActivityBoundaries:
 
         service = ActivityService()
 
-        assert service.last_activity(
-            session,
-        ) is last
+        assert (
+            service.last_activity(
+                session,
+            )
+            is last
+        )
 
     def test_last_activity_returns_none_when_no_events_exist(self) -> None:
         """
@@ -500,9 +518,12 @@ class TestActivityBoundaries:
             ),
         )
 
-        assert service.last_activity(
-            session,
-        ) is None
+        assert (
+            service.last_activity(
+                session,
+            )
+            is None
+        )
 
 
 # ============================================================================
@@ -541,9 +562,7 @@ class TestActivityLookup:
         assert service.activity_events_by_type(
             session,
             ActivityType.INSIGHT,
-        ) == (
-            insight,
-        )
+        ) == (insight,)
 
     def test_activity_events_by_type_returns_empty_tuple_when_no_match(
         self,
@@ -560,10 +579,13 @@ class TestActivityLookup:
 
         service = ActivityService()
 
-        assert service.activity_events_by_type(
-            session,
-            ActivityType.PRAYER_SESSION,
-        ) == ()
+        assert (
+            service.activity_events_by_type(
+                session,
+                ActivityType.PRAYER_SESSION,
+            )
+            == ()
+        )
 
     def test_has_activity_returns_true_when_type_exists(self) -> None:
         """
@@ -578,10 +600,13 @@ class TestActivityLookup:
 
         service = ActivityService()
 
-        assert service.has_activity(
-            session,
-            ActivityType.INSIGHT,
-        ) is True
+        assert (
+            service.has_activity(
+                session,
+                ActivityType.INSIGHT,
+            )
+            is True
+        )
 
     def test_has_activity_returns_false_when_type_does_not_exist(
         self,
@@ -598,10 +623,13 @@ class TestActivityLookup:
 
         service = ActivityService()
 
-        assert service.has_activity(
-            session,
-            ActivityType.PRAYER_SESSION,
-        ) is False
+        assert (
+            service.has_activity(
+                session,
+                ActivityType.PRAYER_SESSION,
+            )
+            is False
+        )
 
 
 # ============================================================================
@@ -625,9 +653,12 @@ class TestConvenienceMethods:
 
         service = ActivityService()
 
-        assert service.has_activities(
-            session,
-        ) is True
+        assert (
+            service.has_activities(
+                session,
+            )
+            is True
+        )
 
     def test_has_activities_returns_false_for_empty_session(self) -> None:
         """
@@ -644,9 +675,12 @@ class TestConvenienceMethods:
             ),
         )
 
-        assert service.has_activities(
-            session,
-        ) is False
+        assert (
+            service.has_activities(
+                session,
+            )
+            is False
+        )
 
     def test_is_empty_returns_true_for_empty_session(self) -> None:
         """
@@ -663,9 +697,12 @@ class TestConvenienceMethods:
             ),
         )
 
-        assert service.is_empty(
-            session,
-        ) is True
+        assert (
+            service.is_empty(
+                session,
+            )
+            is True
+        )
 
     def test_is_empty_returns_false_for_non_empty_session(self) -> None:
         """
@@ -678,9 +715,12 @@ class TestConvenienceMethods:
 
         service = ActivityService()
 
-        assert service.is_empty(
-            session,
-        ) is False
+        assert (
+            service.is_empty(
+                session,
+            )
+            is False
+        )
 
 
 # ============================================================================

@@ -293,8 +293,4 @@ class InsightEvent:
         Return readable representation.
         """
 
-        return (
-            f"InsightEvent("
-            f"title='{self.title}', "
-            f"severity='{self.severity.value}')"
-        )
+        return f"InsightEvent(title='{self.title}', severity='{self.severity.value}')"

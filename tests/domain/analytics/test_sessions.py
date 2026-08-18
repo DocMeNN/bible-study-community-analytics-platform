@@ -193,10 +193,7 @@ def test_count_sessions_supports_generator_input() -> None:
         build_session(session_date=date(2026, 7, 21)),
     )
 
-    session_generator = (
-        session
-        for session in sessions
-    )
+    session_generator = (session for session in sessions)
 
     assert count_sessions(session_generator) == 2
 

@@ -10,7 +10,7 @@ Displays activity analytics for the selected ministry session.
 Responsibilities
 ----------------
 - Coordinate activity presentation workflows.
-- Consume the selected Session through the shared Session Selector.
+- Consume the globally selected Session through Presentation Context.
 - Display activity KPIs.
 - Display activity distribution.
 - Display session activity summary.
@@ -22,6 +22,7 @@ Architectural Rules
 - No business logic.
 - No analytics calculations.
 - No infrastructure access.
+- Do not render the unified session selector locally.
 """
 
 from __future__ import annotations
@@ -41,12 +42,11 @@ import streamlit as st
 # Local Imports
 # ============================================================================
 from src.presentation import context
-from src.presentation.components import (
+from src.presentation.components.common import (
     charts,
     metric_cards,
     tables,
 )
-from src.presentation.components.common import session_selector
 from src.presentation.utils import formatters
 
 # ============================================================================
@@ -65,17 +65,18 @@ def render() -> None:
 
     if not context.has_session_collection():
         st.info(
-            "No sessions loaded.\n\n"
-            "Please load a WhatsApp chat from the Home page.",
+            "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
         )
+
         return
 
-    session = session_selector.render()
+    session = context.current_session()
 
     if session is None:
         st.info(
             "No session is currently selected.",
         )
+
         return
 
     activity_viewmodel = context.activity_viewmodel()
@@ -88,7 +89,7 @@ def render() -> None:
 
     summary = dashboard_viewmodel.dashboard_summary(
         session=session,
-        expected_attendees=context.expected_attendees(),
+        expected_attendees=(context.expected_attendees()),
     )
 
     # =========================================================================
@@ -227,7 +228,9 @@ def render() -> None:
     # Footer
     # =========================================================================
 
-    left_column, right_column = st.columns([3, 1])
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
 
     with left_column:
         st.caption(

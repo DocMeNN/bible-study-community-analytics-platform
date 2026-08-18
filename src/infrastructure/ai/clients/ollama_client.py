@@ -134,7 +134,6 @@ class OllamaClient:
             raise AIConnectionError("Unable to connect to the Ollama server.") from exc
 
         except requests.Timeout as exc:
-
             print("\n" + "=" * 80)
             print("OLLAMA REQUEST TIMED OUT")
             print("=" * 80)

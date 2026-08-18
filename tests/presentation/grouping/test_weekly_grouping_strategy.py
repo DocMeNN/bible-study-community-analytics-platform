@@ -1,4 +1,4 @@
-﻿# tests/presentation/grouping/test_weekly_grouping_strategy.py
+# tests/presentation/grouping/test_weekly_grouping_strategy.py
 
 from datetime import date
 

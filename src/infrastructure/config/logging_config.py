@@ -61,7 +61,7 @@ def configure_logging() -> None:
     log_file: Path = settings.logs_directory / DEFAULT_LOG_FILE
 
     formatter = logging.Formatter(
-        fmt=("%(asctime)s | " "%(levelname)-8s | " "%(name)s | " "%(message)s"),
+        fmt=("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"),
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 

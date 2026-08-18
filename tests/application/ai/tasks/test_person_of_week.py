@@ -150,10 +150,7 @@ class TestExecution:
     ) -> None:
         """execute forwards metrics to the AI service."""
 
-        metrics = (
-            "Alice: 12 participations\n"
-            "Bob: 10 participations"
-        )
+        metrics = "Alice: 12 participations\nBob: 10 participations"
 
         ai_service.process.return_value = "Outstanding contributors identified"
 
@@ -172,11 +169,7 @@ class TestExecution:
     ) -> None:
         """execute preserves multiline metrics."""
 
-        metrics = (
-            "Participant | Sessions | Activities\n"
-            "Alice | 12 | 35\n"
-            "Bob | 10 | 28"
-        )
+        metrics = "Participant | Sessions | Activities\nAlice | 12 | 35\nBob | 10 | 28"
 
         ai_service.process.return_value = "Outstanding contributors identified"
 

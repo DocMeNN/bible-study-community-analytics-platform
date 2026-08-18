@@ -1,4 +1,4 @@
-﻿# src/presentation/grouping/grouping_types.py
+# src/presentation/grouping/grouping_types.py
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ class GroupingPeriod(str, Enum):
     DAY = "day"
     WEEK = "week"
     MONTH = "month"
-    QUARTER = "quarter"
+    FIRST_HALF = "first_half"
+    SECOND_HALF = "second_half"
     YEAR = "year"
 
 

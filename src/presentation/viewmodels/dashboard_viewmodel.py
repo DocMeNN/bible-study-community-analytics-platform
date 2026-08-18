@@ -5,16 +5,17 @@ Dashboard ViewModel
 
 Purpose
 -------
-Coordinates dashboard presentation workflows by consuming the
-Application Layer DashboardService and adapting dashboard data
+Coordinates dashboard presentation workflows by consuming
+Application Layer services and adapting application results
 for Presentation Layer consumption.
 
 Responsibilities
 ----------------
-- Delegate dashboard workflows to DashboardService.
+- Delegate single-session workflows to DashboardService.
+- Delegate multi-session analytics to MultiSessionAnalyticsService.
 - Build Session aggregates through the Application Layer.
-- Expose presentation-ready dashboard data.
-- Adapt application results for existing presentation components.
+- Expose presentation-ready data.
+- Adapt application results for Presentation components.
 
 Architectural Rules
 -------------------
@@ -28,19 +29,21 @@ Architectural Rules
 
 Architecture
 ------------
-Dashboard Page
-        |
-        v
-DashboardViewModel
-        |
-        v
-DashboardService
-        |
-        v
-AttendanceService + ActivityService
-        |
-        v
-Presentation Components
+                    Dashboard Page
+                           |
+                           v
+                 DashboardViewModel
+                    /           \
+                   /             \
+                  v               v
+        DashboardService   MultiSessionAnalyticsService
+                  |               |
+                  v               v
+          Single Session     Multiple Sessions
+                  \\               /
+                   \\             /
+                    v           v
+               Presentation Components
 
 The ViewModel is an adapter between the Application Layer
 and the Presentation Layer.
@@ -58,9 +61,18 @@ from typing import Any
 # ============================================================================
 # Local Imports
 # ============================================================================
+from src.application.dto.multi_session_analytics_result import (
+    MultiSessionAnalyticsResult,
+)
 from src.application.services.dashboard_service import DashboardService
+from src.application.services.multi_session_analytics_service import (
+    MultiSessionAnalyticsService,
+)
 from src.domain.models.message import Message
 from src.domain.models.session import Session
+from src.presentation.dto.multi_session_overview import (
+    MultiSessionOverview,
+)
 
 # ============================================================================
 # Dashboard ViewModel
@@ -71,17 +83,23 @@ class DashboardViewModel:
     """
     Presentation ViewModel for dashboard workflows.
 
-    Coordinates the DashboardService and adapts dashboard
+    Coordinates Application Layer services and adapts
     application data for Presentation Layer consumption.
 
-    The ViewModel does not calculate dashboard analytics.
-    All calculations remain delegated to the Application
-    and Domain layers.
+    The ViewModel performs structural adaptation only.
+
+    It does not:
+
+    - calculate analytics;
+    - apply business rules;
+    - parse messages;
+    - modify Session aggregates.
     """
 
     def __init__(
         self,
         dashboard_service: DashboardService | None = None,
+        multi_session_analytics_service: MultiSessionAnalyticsService | None = None,
     ) -> None:
         """
         Initialize the DashboardViewModel.
@@ -91,13 +109,18 @@ class DashboardViewModel:
         dashboard_service:
             Optional DashboardService dependency.
 
-            When omitted, a default DashboardService is created.
+        multi_session_analytics_service:
+            Optional MultiSessionAnalyticsService dependency.
         """
 
         self._dashboard_service = (
-            dashboard_service
-            if dashboard_service is not None
-            else DashboardService()
+            dashboard_service if dashboard_service is not None else DashboardService()
+        )
+
+        self._multi_session_analytics_service = (
+            multi_session_analytics_service
+            if multi_session_analytics_service is not None
+            else MultiSessionAnalyticsService()
         )
 
     # =========================================================================
@@ -112,9 +135,6 @@ class DashboardViewModel:
     ) -> Session:
         """
         Build a Session through the Application Layer.
-
-        Session construction remains delegated to
-        DashboardService.
         """
 
         return self._dashboard_service.build_session(
@@ -123,7 +143,7 @@ class DashboardViewModel:
         )
 
     # =========================================================================
-    # Dashboard Data
+    # Single-Session Dashboard
     # =========================================================================
 
     def get_dashboard(
@@ -133,10 +153,7 @@ class DashboardViewModel:
         expected_attendees: int,
     ) -> dict[str, Any]:
         """
-        Return complete dashboard data.
-
-        Dashboard calculations are delegated to
-        DashboardService.
+        Return complete dashboard data for a single Daily Session.
         """
 
         return self.to_presentation_data(
@@ -151,15 +168,9 @@ class DashboardViewModel:
         expected_attendees: int,
     ) -> dict[str, Any]:
         """
-        Adapt dashboard application results for Presentation components.
+        Adapt single-session application results for Presentation components.
 
-        This method performs structural presentation adaptation only.
-
-        It does not:
-            - calculate analytics;
-            - apply business rules;
-            - parse messages;
-            - modify the Session aggregate.
+        Performs structural adaptation only.
         """
 
         return {
@@ -180,6 +191,54 @@ class DashboardViewModel:
         }
 
     # =========================================================================
+    # Multi-Session Dashboard
+    # =========================================================================
+
+    def multi_session_summary(
+        self,
+        *,
+        sessions: Iterable[Session],
+    ) -> MultiSessionAnalyticsResult:
+        """
+        Return application analytics for multiple Daily Sessions.
+
+        The ViewModel delegates all analytics calculations to the
+        MultiSessionAnalyticsService.
+        """
+
+        return self._multi_session_analytics_service.analyze(
+            sessions=sessions,
+        )
+
+    def multi_session_presentation_data(
+        self,
+        *,
+        sessions: Iterable[Session],
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready multi-session data.
+
+        Performs structural adaptation only.
+        """
+
+        analytics = self.multi_session_summary(
+            sessions=sessions,
+        )
+
+        overview = MultiSessionOverview(
+            session_count=analytics.session_count,
+            start_date=analytics.start_date,
+            end_date=analytics.end_date,
+            participant_count=analytics.total_participants,
+            done_events=analytics.total_done_events,
+            activity_events=analytics.total_activity_events,
+        )
+
+        return {
+            "overview": overview,
+        }
+
+    # =========================================================================
     # Individual Sections
     # =========================================================================
 
@@ -189,7 +248,7 @@ class DashboardViewModel:
         session: Session,
     ) -> dict[str, Any]:
         """
-        Return presentation-ready session summary data.
+        Return presentation-ready session summary.
         """
 
         return self._dashboard_service.session_summary(
@@ -203,7 +262,7 @@ class DashboardViewModel:
         expected_attendees: int,
     ) -> dict[str, Any]:
         """
-        Return presentation-ready dashboard summary data.
+        Return presentation-ready dashboard summary.
         """
 
         return self._dashboard_service.dashboard_summary(
@@ -218,7 +277,7 @@ class DashboardViewModel:
         expected_attendees: int,
     ) -> dict[str, Any]:
         """
-        Return presentation-ready attendance summary data.
+        Return presentation-ready attendance summary.
         """
 
         return self._dashboard_service.attendance_summary(
@@ -232,7 +291,7 @@ class DashboardViewModel:
         session: Session,
     ) -> dict[str, Any]:
         """
-        Return presentation-ready activity summary data.
+        Return presentation-ready activity summary.
         """
 
         return self._dashboard_service.activity_summary(
@@ -262,7 +321,7 @@ class DashboardViewModel:
         session: Session,
     ) -> bool:
         """
-        Return True when activities exist.
+        Return True when activity data exists.
         """
 
         return self._dashboard_service.has_activities(
@@ -289,10 +348,20 @@ class DashboardViewModel:
     @property
     def dashboard_service(self) -> DashboardService:
         """
-        Return the underlying DashboardService.
+        Return the DashboardService.
         """
 
         return self._dashboard_service
+
+    @property
+    def multi_session_analytics_service(
+        self,
+    ) -> MultiSessionAnalyticsService:
+        """
+        Return the MultiSessionAnalyticsService.
+        """
+
+        return self._multi_session_analytics_service
 
     # =========================================================================
     # Dunder Methods
@@ -306,12 +375,14 @@ class DashboardViewModel:
         return (
             f"{self.__class__.__name__}("
             f"dashboard_service="
-            f"{self.dashboard_service.__class__.__name__})"
+            f"{self.dashboard_service.__class__.__name__}, "
+            f"multi_session_analytics_service="
+            f"{self.multi_session_analytics_service.__class__.__name__})"
         )
 
     def __str__(self) -> str:
         """
-        Return a readable representation.
+        Return self.__repr__().
         """
 
         return self.__repr__()

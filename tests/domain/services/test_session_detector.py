@@ -145,9 +145,7 @@ class TestSessionDetectorConstruction:
             hours=18,
         )
 
-        assert detector.minimum_session_gap == (
-            MINIMUM_SESSION_GAP
-        )
+        assert detector.minimum_session_gap == (MINIMUM_SESSION_GAP)
 
     def test_repr_returns_official_representation(
         self,
@@ -157,10 +155,7 @@ class TestSessionDetectorConstruction:
         repr returns the expected representation.
         """
 
-        assert repr(detector) == (
-            "SessionDetector("
-            "minimum_session_gap=18:00:00)"
-        )
+        assert repr(detector) == ("SessionDetector(minimum_session_gap=18:00:00)")
 
     def test_str_matches_repr(
         self,
@@ -584,9 +579,7 @@ class TestSessionGrouping:
             first_message,
         )
 
-        assert result[1] == (
-            second_marker,
-        )
+        assert result[1] == (second_marker,)
 
     def test_multiple_sessions_are_detected(
         self,
@@ -714,9 +707,7 @@ class TestSessionGrouping:
 
         assert len(result) == 1
 
-        assert result[0] == (
-            marker,
-        )
+        assert result[0] == (marker,)
 
     def test_session_marker_is_preserved_in_group(
         self,
@@ -816,10 +807,7 @@ class TestSessionGapBehaviour:
         )
 
         second = scripture_message(
-            timestamp=(
-                first.timestamp
-                + MINIMUM_SESSION_GAP
-            ),
+            timestamp=(first.timestamp + MINIMUM_SESSION_GAP),
             line_number=2,
         )
 

@@ -76,9 +76,14 @@ def builder() -> MultiSessionBuilder:
 def session_builder() -> Mock:
     """Return an injected SessionBuilder mock."""
 
-    return Mock(
-        spec=SessionBuilder,
+    mock = Mock(spec=SessionBuilder)
+
+    mock._is_session_start.side_effect = (
+        lambda message: "scripture reading"
+        in message.content.casefold()
     )
+
+    return mock
 
 
 def make_message(
@@ -529,9 +534,13 @@ class TestBuildWorkflow:
         second_call = session_builder.build.call_args_list[1]
 
         assert first_call.kwargs["session_date"] == first.date()
-        assert second_call.kwargs["session_date"] == (
-            first + timedelta(hours=20)
-        ).date()
+
+        assert (
+            second_call.kwargs["session_date"]
+            == (
+                first + timedelta(hours=20)
+            ).date()
+        )
 
     def test_empty_input_returns_empty_collection(
         self,
@@ -598,8 +607,10 @@ class TestBuildWorkflow:
             result.session_dates[1],
         )
 
-        assert result.session_dates[0] < result.session_dates[1]
-
+        assert (
+            result.session_dates[0]
+            < result.session_dates[1]
+        )
 
 # ============================================================================
 # Validation
@@ -620,9 +631,7 @@ class TestValidation:
             match="messages must contain only Message instances",
         ):
             builder.build(
-                (
-                    "not a message",
-                ),
+                ("not a message",),
             )
 
 
@@ -657,6 +666,42 @@ class TestSessionMarker:
 
 
 # ============================================================================
+# Accessors
+# ============================================================================
+
+
+class TestAccessors:
+    """Test public accessors."""
+
+    def test_session_builder_accessor(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """session_builder returns the configured builder."""
+
+        assert isinstance(
+            builder.session_builder,
+            SessionBuilder,
+        )
+
+    def test_session_detector_accessor(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """session_detector returns the configured detector."""
+
+        assert builder.session_detector is not None
+
+    def test_name_returns_class_name(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """name returns the class name."""
+
+        assert builder.name == "MultiSessionBuilder"
+
+
+# ============================================================================
 # Dunder Methods
 # ============================================================================
 
@@ -670,9 +715,13 @@ class TestDunderMethods:
     ) -> None:
         """repr contains the class name."""
 
-        assert "MultiSessionBuilder" in repr(
+        representation = repr(
             builder,
         )
+
+        assert "MultiSessionBuilder" in representation
+        assert "session_detector=" in representation
+        assert "session_builder=" in representation
 
     def test_str_matches_repr(
         self,

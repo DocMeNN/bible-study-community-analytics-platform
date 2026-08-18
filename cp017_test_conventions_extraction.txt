@@ -1,0 +1,3163 @@
+﻿============================================================
+FILE: tests\application\builders\test_multi_session_builder.py
+============================================================
+# tests/application/builders/test_multi_session_builder.py
+
+"""
+Multi-Session Builder Tests
+
+Purpose
+-------
+Verify multi-session detection and construction orchestration.
+
+Coverage
+--------
+- Builder construction.
+- SessionBuilder dependency injection.
+- First Scripture Reading session detection.
+- 18-hour session boundary.
+- Sub-18-hour Scripture Reading markers.
+- Messages before the first session marker.
+- Chronological ordering.
+- Multiple Session construction.
+- Empty input.
+- Invalid message validation.
+- SessionBuilder delegation.
+- Accessors and dunder methods.
+
+Rules
+-----
+- Test MultiSessionBuilder orchestration only.
+- Do not duplicate SessionBuilder tests.
+- Do not duplicate SessionCollection tests.
+- Do not test Domain analytics.
+- Do not test infrastructure parsing.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from datetime import datetime, timedelta
+from unittest.mock import Mock
+
+import pytest
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.builders.multi_session_builder import (
+    MultiSessionBuilder,
+)
+from src.application.builders.session_builder import SessionBuilder
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
+
+# ============================================================================
+# Fixtures
+# ============================================================================
+
+
+@pytest.fixture
+def builder() -> MultiSessionBuilder:
+    """Return a default MultiSessionBuilder."""
+
+    return MultiSessionBuilder()
+
+
+@pytest.fixture
+def session_builder() -> Mock:
+    """Return an injected SessionBuilder mock."""
+
+    return Mock(
+        spec=SessionBuilder,
+    )
+
+
+def make_message(
+    timestamp: datetime,
+    content: str,
+    sender: str = "Alice",
+) -> Message:
+    """Create a representative Message."""
+
+    return Message(
+        timestamp=timestamp,
+        sender=sender,
+        content=content,
+        line_number=1,
+    )
+
+
+# ============================================================================
+# Construction
+# ============================================================================
+
+
+class TestMultiSessionBuilderConstruction:
+    """Test MultiSessionBuilder construction."""
+
+    def test_default_construction(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Default construction creates a SessionBuilder."""
+
+        assert isinstance(
+            builder.session_builder,
+            SessionBuilder,
+        )
+
+    def test_dependency_injection_preserves_session_builder(
+        self,
+        session_builder: Mock,
+    ) -> None:
+        """Injected SessionBuilder is preserved."""
+
+        service = MultiSessionBuilder(
+            session_builder=session_builder,
+        )
+
+        assert service.session_builder is session_builder
+
+
+# ============================================================================
+# Session Detection
+# ============================================================================
+
+
+class TestSessionDetection:
+    """Test Scripture Reading session detection."""
+
+    def test_first_scripture_reading_starts_first_session(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """The first Scripture Reading marker starts the first session."""
+
+        messages = (
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    9,
+                    0,
+                ),
+                "Done",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 1
+        assert len(result[0]) == 2
+
+    def test_scripture_reading_before_18_hours_does_not_start_new_session(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """A marker before the 18-hour gap remains in the same session."""
+
+        start = datetime(
+            2026,
+            7,
+            23,
+            8,
+            0,
+        )
+
+        messages = (
+            make_message(
+                start,
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                start + timedelta(hours=10),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                start + timedelta(hours=11),
+                "Done",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 1
+        assert len(result[0]) == 3
+
+    def test_scripture_reading_exactly_18_hours_later_starts_new_session(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """A marker exactly 18 hours later starts a new session."""
+
+        start = datetime(
+            2026,
+            7,
+            23,
+            8,
+            0,
+        )
+
+        messages = (
+            make_message(
+                start,
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                start + timedelta(hours=17),
+                "Done",
+            ),
+            make_message(
+                start + timedelta(hours=18),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                start + timedelta(hours=19),
+                "Done",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 2
+        assert len(result[0]) == 2
+        assert len(result[1]) == 2
+
+    def test_scripture_reading_after_18_hours_starts_new_session(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """A marker after 18 hours starts a new session."""
+
+        start = datetime(
+            2026,
+            7,
+            23,
+            8,
+            0,
+        )
+
+        messages = (
+            make_message(
+                start,
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                start + timedelta(hours=19),
+                "SCRIPTURE READING",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 2
+
+    def test_messages_before_first_session_marker_are_excluded(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Messages before the first Scripture Reading are excluded."""
+
+        messages = (
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    6,
+                    0,
+                ),
+                "Good morning",
+            ),
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    9,
+                    0,
+                ),
+                "Done",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 1
+        assert len(result[0]) == 2
+        assert result[0][0].content == "SCRIPTURE READING"
+
+    def test_multiple_sessions_are_detected(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Multiple daily session boundaries are detected."""
+
+        first = datetime(
+            2026,
+            7,
+            23,
+            8,
+            0,
+        )
+
+        messages = (
+            make_message(
+                first,
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                first + timedelta(hours=1),
+                "Done",
+            ),
+            make_message(
+                first + timedelta(hours=20),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                first + timedelta(hours=21),
+                "Done",
+            ),
+            make_message(
+                first + timedelta(hours=40),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                first + timedelta(hours=41),
+                "Done",
+            ),
+        )
+
+        result = builder._group_messages(
+            messages,
+        )
+
+        assert len(result) == 3
+
+
+# ============================================================================
+# Ordering
+# ============================================================================
+
+
+class TestMessageOrdering:
+    """Test chronological ordering."""
+
+    def test_messages_are_sorted_before_grouping(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Messages are ordered chronologically."""
+
+        first = make_message(
+            datetime(
+                2026,
+                7,
+                23,
+                8,
+                0,
+            ),
+            "SCRIPTURE READING",
+        )
+
+        second = make_message(
+            datetime(
+                2026,
+                7,
+                23,
+                9,
+                0,
+            ),
+            "Done",
+        )
+
+        result = builder._validate_messages(
+            (
+                second,
+                first,
+            ),
+        )
+
+        assert result == (
+            first,
+            second,
+        )
+
+
+# ============================================================================
+# Public Build Workflow
+# ============================================================================
+
+
+class TestBuildWorkflow:
+    """Test complete multi-session build workflow."""
+
+    def test_build_returns_session_collection(
+        self,
+        session_builder: Mock,
+    ) -> None:
+        """build returns a SessionCollection."""
+
+        session_builder.build.side_effect = (
+            lambda session_date, messages: Session(
+                session_date=session_date,
+            )
+        )
+
+        builder = MultiSessionBuilder(
+            session_builder=session_builder,
+        )
+
+        messages = (
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    24,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+        )
+
+        result = builder.build(
+            messages,
+        )
+
+        assert isinstance(
+            result,
+            SessionCollection,
+        )
+
+        assert result.count == 2
+
+    def test_build_delegates_each_session_to_session_builder(
+        self,
+        session_builder: Mock,
+    ) -> None:
+        """Each detected group is delegated to SessionBuilder."""
+
+        session_builder.build.side_effect = (
+            lambda session_date, messages: Session(
+                session_date=session_date,
+            )
+        )
+
+        builder = MultiSessionBuilder(
+            session_builder=session_builder,
+        )
+
+        first = datetime(
+            2026,
+            7,
+            23,
+            8,
+            0,
+        )
+
+        messages = (
+            make_message(
+                first,
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                first + timedelta(hours=20),
+                "SCRIPTURE READING",
+            ),
+        )
+
+        result = builder.build(
+            messages,
+        )
+
+        assert result.count == 2
+
+        assert session_builder.build.call_count == 2
+
+        first_call = session_builder.build.call_args_list[0]
+        second_call = session_builder.build.call_args_list[1]
+
+        assert first_call.kwargs["session_date"] == first.date()
+        assert second_call.kwargs["session_date"] == (
+            first + timedelta(hours=20)
+        ).date()
+
+    def test_empty_input_returns_empty_collection(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Empty input produces an empty SessionCollection."""
+
+        result = builder.build(
+            (),
+        )
+
+        assert isinstance(
+            result,
+            SessionCollection,
+        )
+
+        assert result.is_empty
+
+    def test_session_dates_are_chronological(
+        self,
+        session_builder: Mock,
+    ) -> None:
+        """Built sessions are returned chronologically."""
+
+        session_builder.build.side_effect = (
+            lambda session_date, messages: Session(
+                session_date=session_date,
+            )
+        )
+
+        builder = MultiSessionBuilder(
+            session_builder=session_builder,
+        )
+
+        messages = (
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    24,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+            make_message(
+                datetime(
+                    2026,
+                    7,
+                    23,
+                    8,
+                    0,
+                ),
+                "SCRIPTURE READING",
+            ),
+        )
+
+        result = builder.build(
+            messages,
+        )
+
+        assert result.session_dates == (
+            result.session_dates[0],
+            result.session_dates[1],
+        )
+
+        assert result.session_dates[0] < result.session_dates[1]
+
+
+# ============================================================================
+# Validation
+# ============================================================================
+
+
+class TestValidation:
+    """Test input validation."""
+
+    def test_non_message_input_raises_type_error(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Non-Message values are rejected."""
+
+        with pytest.raises(
+            TypeError,
+            match="messages must contain only Message instances",
+        ):
+            builder.build(
+                (
+                    "not a message",
+                ),
+            )
+
+
+# ============================================================================
+# Session Marker
+# ============================================================================
+
+
+class TestSessionMarker:
+    """Test session marker detection."""
+
+    def test_session_marker_matching_is_case_insensitive(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """Session marker matching is case-insensitive."""
+
+        message = make_message(
+            datetime(
+                2026,
+                7,
+                23,
+                8,
+                0,
+            ),
+            "scripture reading",
+        )
+
+        assert builder._is_session_start(
+            message,
+        )
+
+
+# ============================================================================
+# Dunder Methods
+# ============================================================================
+
+
+class TestDunderMethods:
+    """Test MultiSessionBuilder dunder methods."""
+
+    def test_repr_contains_class_name(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """repr contains the class name."""
+
+        assert "MultiSessionBuilder" in repr(
+            builder,
+        )
+
+    def test_str_matches_repr(
+        self,
+        builder: MultiSessionBuilder,
+    ) -> None:
+        """str and repr return the same representation."""
+
+        assert str(
+            builder,
+        ) == repr(
+            builder,
+        )
+
+============================================================
+FILE: tests\application\services\test_attendance_service.py
+============================================================
+# tests/application/services/test_attendance_service.py
+
+"""
+AttendanceService Application Service Tests
+
+Purpose:
+    Verify AttendanceService orchestration, attendance calculations,
+    Done acknowledgement handling, participant information, convenience
+    methods, application result DTO construction, and representations.
+
+Author:
+    Me
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from datetime import date, datetime
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import pytest
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.builders.session_builder import SessionBuilder
+from src.application.dto.attendance_result import AttendanceResult
+from src.application.services.attendance_service import AttendanceService
+from src.domain.enums.attendance_type import AttendanceType
+from src.domain.models.attendance_event import AttendanceEvent
+from src.domain.models.done_event import DoneEvent
+from src.domain.models.member import Member
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Test Helpers
+# ============================================================================
+
+
+def message(
+    *,
+    sender: str = "Alice",
+    content: str = "Message",
+    minute: int = 0,
+    line_number: int = 1,
+) -> Message:
+    """
+    Create a valid Message for testing.
+    """
+
+    return Message(
+        timestamp=datetime(
+            2026,
+            7,
+            23,
+            8,
+            minute,
+        ),
+        sender=sender,
+        content=content,
+        line_number=line_number,
+    )
+
+
+def attendance_event(
+    *,
+    attendee: str = "Alice",
+    minute: int = 0,
+    line_number: int = 1,
+) -> AttendanceEvent:
+    """
+    Create a valid AttendanceEvent for testing.
+    """
+
+    source = message(
+        sender=attendee,
+        content="Participation",
+        minute=minute,
+        line_number=line_number,
+    )
+
+    return AttendanceEvent(
+        attendee=attendee,
+        source_message=source,
+    )
+
+
+def done_event(
+    *,
+    attendee: str = "Alice",
+    minute: int = 0,
+    line_number: int = 1,
+) -> DoneEvent:
+    """
+    Create a valid DoneEvent for testing.
+    """
+
+    source = message(
+        sender=attendee,
+        content="Done",
+        minute=minute,
+        line_number=line_number,
+    )
+
+    return DoneEvent(
+        attendee=attendee,
+        source_message=source,
+    )
+
+
+def session_with_attendance(
+    *events: AttendanceEvent,
+) -> Session:
+    """
+    Build a Session containing attendance events.
+    """
+
+    return Session(
+        session_date=date(
+            2026,
+            7,
+            23,
+        ),
+        attendance_events=tuple(events),
+    )
+
+
+def session_with_done_events(
+    *events: DoneEvent,
+) -> Session:
+    """
+    Build a Session containing Done events.
+    """
+
+    return Session(
+        session_date=date(
+            2026,
+            7,
+            23,
+        ),
+        done_events=tuple(events),
+    )
+
+
+# ============================================================================
+# Test Doubles
+# ============================================================================
+
+
+class RecordingSessionBuilder:
+    """
+    Test double for SessionBuilder delegation.
+    """
+
+    name = "RecordingSessionBuilder"
+
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
+        self.session = session
+        self.calls: list[dict[str, object]] = []
+
+    def build(
+        self,
+        *,
+        session_date: date,
+        messages: object,
+    ) -> Session:
+        """
+        Record the build call and return the configured session.
+        """
+
+        self.calls.append(
+            {
+                "session_date": session_date,
+                "messages": messages,
+            }
+        )
+
+        return self.session
+
+
+# ============================================================================
+# AttendanceService Initialization
+# ============================================================================
+
+
+class TestAttendanceServiceInitialization:
+    """
+    Test service initialization and builder access.
+    """
+
+    def test_default_builder_is_created(self) -> None:
+        """
+        The service creates a SessionBuilder when none is supplied.
+        """
+
+        service = AttendanceService()
+
+        assert isinstance(
+            service.builder,
+            SessionBuilder,
+        )
+
+    def test_supplied_builder_is_preserved(self) -> None:
+        """
+        A supplied builder is used by the service.
+        """
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        builder = RecordingSessionBuilder(
+            session,
+        )
+
+        service = AttendanceService(
+            session_builder=builder,
+        )
+
+        assert service.builder is builder
+
+
+# ============================================================================
+# Session Construction
+# ============================================================================
+
+
+class TestSessionConstruction:
+    """
+    Test SessionBuilder orchestration.
+    """
+
+    def test_build_session_delegates_to_builder(self) -> None:
+        """
+        build_session delegates session construction to the builder.
+        """
+
+        expected_session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        builder = RecordingSessionBuilder(
+            expected_session,
+        )
+
+        service = AttendanceService(
+            session_builder=builder,
+        )
+
+        session_date = date(
+            2026,
+            7,
+            23,
+        )
+
+        messages = (
+            message(
+                line_number=1,
+            ),
+        )
+
+        result = service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+        assert result is expected_session
+        assert len(builder.calls) == 1
+        assert builder.calls[0]["session_date"] == session_date
+        assert builder.calls[0]["messages"] is messages
+
+
+# ============================================================================
+# Attendance Events
+# ============================================================================
+
+
+class TestAttendanceEvents:
+    """
+    Test attendance event access and participant calculations.
+    """
+
+    def test_attendance_events_returns_session_events(self) -> None:
+        """
+        Attendance events are returned from the Session aggregate.
+        """
+
+        first = attendance_event(
+            attendee="Alice",
+            minute=1,
+            line_number=1,
+        )
+
+        second = attendance_event(
+            attendee="Bob",
+            minute=2,
+            line_number=2,
+        )
+
+        session = session_with_attendance(
+            first,
+            second,
+        )
+
+        service = AttendanceService()
+
+        assert service.attendance_events(
+            session,
+        ) == (
+            first,
+            second,
+        )
+
+    def test_attendees_returns_unique_participants(self) -> None:
+        """
+        Attendees are unique while preserving domain ordering.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="alice",
+                minute=1,
+                line_number=2,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.attendees(
+            session,
+        ) == (
+            "Alice",
+            "Bob",
+        )
+
+    def test_attendance_count_returns_unique_participant_count(self) -> None:
+        """
+        Attendance count represents unique observed participants.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="Alice",
+                minute=1,
+                line_number=2,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.attendance_count(
+            session,
+        ) == 2
+
+    def test_attendance_count_is_zero_for_empty_session(self) -> None:
+        """
+        Empty sessions have zero observed participants.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.attendance_count(
+            session,
+        ) == 0
+
+
+# ============================================================================
+# Attendance Rate
+# ============================================================================
+
+
+class TestAttendanceRate:
+    """
+    Test attendance percentage calculations.
+    """
+
+    def test_attendance_rate_is_calculated_against_expected_population(
+        self,
+    ) -> None:
+        """
+        Attendance rate is observed participants divided by expected members.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=1,
+                line_number=2,
+            ),
+        )
+
+        service = AttendanceService()
+
+        result = service.attendance_rate(
+            session,
+            expected_attendees=4,
+        )
+
+        assert result == 50.0
+
+    def test_attendance_rate_returns_zero_for_zero_expected_attendees(
+        self,
+    ) -> None:
+        """
+        Zero expected participants produce a zero rate.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.attendance_rate(
+            session,
+            expected_attendees=0,
+        ) == 0.0
+
+    def test_negative_expected_attendees_raise_value_error(self) -> None:
+        """
+        Negative expected participant counts are invalid.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="expected_attendees cannot be negative",
+        ):
+            service.attendance_rate(
+                session,
+                expected_attendees=-1,
+            )
+
+
+# ============================================================================
+# Member Attendance Rate
+# ============================================================================
+
+
+class TestMemberAttendanceRate:
+    """
+    Test known-member participation calculations.
+    """
+
+    def test_member_who_participated_has_full_rate(self) -> None:
+        """
+        A known member who participated receives 100 percent.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+            ),
+        )
+
+        service = AttendanceService()
+
+        member = Member(
+            name="Alice",
+        )
+
+        assert service.member_attendance_rate(
+            member,
+            session,
+        ) == 100.0
+
+    def test_member_matching_is_case_insensitive(self) -> None:
+        """
+        Member matching is case-insensitive.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+            ),
+        )
+
+        service = AttendanceService()
+
+        member = Member(
+            name="alice",
+        )
+
+        assert service.member_attendance_rate(
+            member,
+            session,
+        ) == 100.0
+
+    def test_member_who_did_not_participate_has_zero_rate(self) -> None:
+        """
+        A known member who did not participate receives zero percent.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+            ),
+        )
+
+        service = AttendanceService()
+
+        member = Member(
+            name="Bob",
+        )
+
+        assert service.member_attendance_rate(
+            member,
+            session,
+        ) == 0.0
+
+
+# ============================================================================
+# Attendance Classification
+# ============================================================================
+
+
+class TestAttendanceCounts:
+    """
+    Test attendance classification counts.
+    """
+
+    def test_present_count_is_returned_as_present(self) -> None:
+        """
+        Current attendance classification contains PRESENT participation.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=1,
+                line_number=2,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.attendance_counts(
+            session,
+        ) == {
+            AttendanceType.PRESENT: 2,
+        }
+
+    def test_empty_attendance_returns_empty_mapping(self) -> None:
+        """
+        No attendance produces no classification counts.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.attendance_counts(
+            session,
+        ) == {}
+
+
+# ============================================================================
+# Done Events
+# ============================================================================
+
+
+class TestDoneEvents:
+    """
+    Test Done acknowledgement orchestration.
+    """
+
+    def test_done_events_returns_session_events(self) -> None:
+        """
+        Done events are returned from the Session aggregate.
+        """
+
+        first = done_event(
+            attendee="Alice",
+            line_number=1,
+        )
+
+        second = done_event(
+            attendee="Bob",
+            minute=1,
+            line_number=2,
+        )
+
+        session = session_with_done_events(
+            first,
+            second,
+        )
+
+        service = AttendanceService()
+
+        assert service.done_events(
+            session,
+        ) == (
+            first,
+            second,
+        )
+
+    def test_done_count_counts_acknowledgement_events(self) -> None:
+        """
+        Done count counts events rather than unique attendees.
+        """
+
+        session = session_with_done_events(
+            done_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            done_event(
+                attendee="Alice",
+                minute=1,
+                line_number=2,
+            ),
+            done_event(
+                attendee="Bob",
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.done_count(
+            session,
+        ) == 3
+
+    def test_first_done_returns_earliest_done_event(self) -> None:
+        """
+        The first Done event is returned.
+        """
+
+        first = done_event(
+            attendee="Alice",
+            minute=1,
+            line_number=1,
+        )
+
+        second = done_event(
+            attendee="Bob",
+            minute=2,
+            line_number=2,
+        )
+
+        session = session_with_done_events(
+            second,
+            first,
+        )
+
+        service = AttendanceService()
+
+        assert service.first_done(
+            session,
+        ) is first
+
+    def test_first_done_returns_none_when_no_done_events_exist(self) -> None:
+        """
+        No Done events produce None.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.first_done(
+            session,
+        ) is None
+
+
+# ============================================================================
+# Participant Information
+# ============================================================================
+
+
+class TestParticipantInformation:
+    """
+    Test participant convenience methods.
+    """
+
+    def test_participant_count_returns_unique_observed_participants(
+        self,
+    ) -> None:
+        """
+        Participant count reflects unique observed participants.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="alice",
+                minute=1,
+                line_number=2,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.participant_count(
+            session,
+        ) == 2
+
+    def test_participants_returns_observed_participants(self) -> None:
+        """
+        Participants returns the unique observed participant sequence.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=1,
+                line_number=2,
+            ),
+        )
+
+        service = AttendanceService()
+
+        assert service.participants(
+            session,
+        ) == (
+            "Alice",
+            "Bob",
+        )
+
+
+# ============================================================================
+# Application Result
+# ============================================================================
+
+
+class TestAttendanceResult:
+    """
+    Test typed attendance result construction.
+    """
+
+    def test_attendance_result_returns_attendance_result_dto(self) -> None:
+        """
+        attendance_result returns the typed application DTO.
+        """
+
+        session = session_with_attendance(
+            attendance_event(
+                attendee="Alice",
+                line_number=1,
+            ),
+            attendance_event(
+                attendee="Bob",
+                minute=1,
+                line_number=2,
+            ),
+        )
+
+        service = AttendanceService()
+
+        result = service.attendance_result(
+            session,
+            expected_attendees=4,
+        )
+
+        assert isinstance(
+            result,
+            AttendanceResult,
+        )
+
+    def test_attendance_result_contains_attendance_data(self) -> None:
+        """
+        AttendanceResult contains the expected attendance values.
+        """
+
+        first = attendance_event(
+            attendee="Alice",
+            line_number=1,
+        )
+
+        second = attendance_event(
+            attendee="Bob",
+            minute=1,
+            line_number=2,
+        )
+
+        session = session_with_attendance(
+            first,
+            second,
+        )
+
+        service = AttendanceService()
+
+        result = service.attendance_result(
+            session,
+            expected_attendees=4,
+        )
+
+        assert result.attendees == (
+            "Alice",
+            "Bob",
+        )
+
+        assert result.participants == 2
+        assert result.attendance_count == 2
+        assert result.attendance_rate == 50.0
+
+        assert result.attendance_types == {
+            AttendanceType.PRESENT: 2,
+        }
+
+        assert result.attendance_events == (
+            first,
+            second,
+        )
+
+    def test_attendance_result_contains_done_data(self) -> None:
+        """
+        AttendanceResult contains Done acknowledgement data.
+        """
+
+        first = done_event(
+            attendee="Alice",
+            line_number=1,
+        )
+
+        second = done_event(
+            attendee="Bob",
+            minute=1,
+            line_number=2,
+        )
+
+        session = session_with_done_events(
+            first,
+            second,
+        )
+
+        service = AttendanceService()
+
+        result = service.attendance_result(
+            session,
+            expected_attendees=4,
+        )
+
+        assert result.done_events == (
+            first,
+            second,
+        )
+
+        assert result.done_count == 2
+        assert result.first_done is first
+
+    def test_attendance_result_handles_empty_session(self) -> None:
+        """
+        Empty sessions produce an empty AttendanceResult.
+        """
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        service = AttendanceService()
+
+        result = service.attendance_result(
+            session,
+            expected_attendees=4,
+        )
+
+        assert result.attendees == ()
+        assert result.participants == 0
+        assert result.attendance_count == 0
+        assert result.attendance_rate == 0.0
+        assert result.attendance_types == {}
+        assert result.attendance_events == ()
+        assert result.done_events == ()
+        assert result.done_count == 0
+        assert result.first_done is None
+
+
+# ============================================================================
+# Convenience Methods
+# ============================================================================
+
+
+class TestConvenienceMethods:
+    """
+    Test service-level convenience methods.
+    """
+
+    def test_has_attendance_returns_true_when_attendance_exists(self) -> None:
+        """
+        has_attendance returns True when participation exists.
+        """
+
+        session = session_with_attendance(
+            attendance_event(),
+        )
+
+        service = AttendanceService()
+
+        assert service.has_attendance(
+            session,
+        ) is True
+
+    def test_has_attendance_returns_false_when_no_attendance_exists(
+        self,
+    ) -> None:
+        """
+        has_attendance returns False for an empty session.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.has_attendance(
+            session,
+        ) is False
+
+    def test_has_done_events_returns_true_when_done_events_exist(
+        self,
+    ) -> None:
+        """
+        has_done_events returns True when Done events exist.
+        """
+
+        session = session_with_done_events(
+            done_event(),
+        )
+
+        service = AttendanceService()
+
+        assert service.has_done_events(
+            session,
+        ) is True
+
+    def test_has_done_events_returns_false_when_no_done_events_exist(
+        self,
+    ) -> None:
+        """
+        has_done_events returns False when no Done events exist.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.has_done_events(
+            session,
+        ) is False
+
+    def test_is_empty_returns_true_for_empty_session(self) -> None:
+        """
+        Empty sessions are identified correctly.
+        """
+
+        service = AttendanceService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            )
+        )
+
+        assert service.is_empty(
+            session,
+        ) is True
+
+    def test_is_empty_returns_false_for_non_empty_session(self) -> None:
+        """
+        Sessions containing events are not empty.
+        """
+
+        session = session_with_attendance(
+            attendance_event(),
+        )
+
+        service = AttendanceService()
+
+        assert service.is_empty(
+            session,
+        ) is False
+
+
+# ============================================================================
+# Representations
+# ============================================================================
+
+
+class TestAttendanceServiceRepresentations:
+    """
+    Test service string representations.
+    """
+
+    def test_repr_contains_service_name_and_builder_name(self) -> None:
+        """
+        repr identifies the service and its builder.
+        """
+
+        service = AttendanceService()
+
+        result = repr(
+            service,
+        )
+
+        assert "AttendanceService" in result
+        assert "SessionBuilder" in result
+
+    def test_str_matches_repr(self) -> None:
+        """
+        str returns the official representation.
+        """
+
+        service = AttendanceService()
+
+        assert str(
+            service,
+        ) == repr(
+            service,
+        )
+
+============================================================
+FILE: tests\application\services\test_activity_service.py
+============================================================
+# tests/application/services/test_activity_service.py
+
+"""
+Activity Service Application Tests
+
+Purpose:
+    Verify the application-level activity service.
+
+Coverage:
+    - Service initialization.
+    - Session construction delegation.
+    - Activity event access.
+    - Activity counting.
+    - Activity type filtering.
+    - First and last activity lookup.
+    - Convenience methods.
+    - Builder access.
+    - String representations.
+
+Rules:
+    - Tests must use the current Domain model contracts.
+    - Tests must not invent ActivityType values.
+    - Prayer activity is represented by PRAYER_SESSION.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from datetime import date, datetime
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.builders.session_builder import SessionBuilder
+from src.application.services.activity_service import ActivityService
+from src.domain.enums.activity_type import ActivityType
+from src.domain.models.activity_event import ActivityEvent
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Test Helpers
+# ============================================================================
+
+
+def message(
+    *,
+    sender: str = "Alice",
+    content: str = "Message",
+    minute: int = 0,
+    line_number: int = 1,
+) -> Message:
+    """
+    Create a valid Message for testing.
+    """
+
+    return Message(
+        timestamp=datetime(
+            2026,
+            7,
+            23,
+            8,
+            minute,
+        ),
+        sender=sender,
+        content=content,
+        line_number=line_number,
+    )
+
+
+def activity_event(
+    *,
+    sender: str = "Alice",
+    activity_type: ActivityType = ActivityType.INSIGHT,
+    minute: int = 0,
+    line_number: int = 1,
+) -> ActivityEvent:
+    """
+    Create a valid ActivityEvent for testing.
+    """
+
+    return ActivityEvent(
+        activity_type=activity_type,
+        source_message=message(
+            sender=sender,
+            content="Activity",
+            minute=minute,
+            line_number=line_number,
+        ),
+    )
+
+
+def session_with_activities(
+    *events: ActivityEvent,
+) -> Session:
+    """
+    Build a Session containing activity events.
+    """
+
+    return Session(
+        session_date=date(
+            2026,
+            7,
+            23,
+        ),
+        activity_events=tuple(events),
+    )
+
+
+# ============================================================================
+# Test Doubles
+# ============================================================================
+
+
+class RecordingSessionBuilder:
+    """
+    Test double for SessionBuilder delegation.
+    """
+
+    name = "RecordingSessionBuilder"
+
+    def __init__(
+        self,
+        session: Session,
+    ) -> None:
+        self.session = session
+        self.calls: list[dict[str, object]] = []
+
+    def build(
+        self,
+        *,
+        session_date: date,
+        messages: object,
+    ) -> Session:
+        """
+        Record the build call and return the configured session.
+        """
+
+        self.calls.append(
+            {
+                "session_date": session_date,
+                "messages": messages,
+            }
+        )
+
+        return self.session
+
+
+# ============================================================================
+# ActivityService Initialization
+# ============================================================================
+
+
+class TestActivityServiceInitialization:
+    """
+    Test service initialization and builder access.
+    """
+
+    def test_default_builder_is_created(self) -> None:
+        """
+        The service creates a SessionBuilder when none is supplied.
+        """
+
+        service = ActivityService()
+
+        assert isinstance(
+            service.builder,
+            SessionBuilder,
+        )
+
+    def test_supplied_builder_is_preserved(self) -> None:
+        """
+        A supplied builder is used by the service.
+        """
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        builder = RecordingSessionBuilder(
+            session,
+        )
+
+        service = ActivityService(
+            session_builder=builder,
+        )
+
+        assert service.builder is builder
+
+
+# ============================================================================
+# Session Construction
+# ============================================================================
+
+
+class TestSessionConstruction:
+    """
+    Test SessionBuilder orchestration.
+    """
+
+    def test_build_session_delegates_to_builder(self) -> None:
+        """
+        build_session delegates session construction to the builder.
+        """
+
+        expected_session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        builder = RecordingSessionBuilder(
+            expected_session,
+        )
+
+        service = ActivityService(
+            session_builder=builder,
+        )
+
+        session_date = date(
+            2026,
+            7,
+            23,
+        )
+
+        messages = (
+            message(
+                line_number=1,
+            ),
+        )
+
+        result = service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+        assert result is expected_session
+        assert len(builder.calls) == 1
+        assert builder.calls[0]["session_date"] == session_date
+        assert builder.calls[0]["messages"] is messages
+
+
+# ============================================================================
+# Activity Events
+# ============================================================================
+
+
+class TestActivityEvents:
+    """
+    Test activity event access and counting.
+    """
+
+    def test_activity_events_returns_session_events(self) -> None:
+        """
+        All activity events are returned.
+        """
+
+        first = activity_event(
+            sender="Alice",
+            minute=1,
+            line_number=1,
+        )
+
+        second = activity_event(
+            sender="Bob",
+            minute=2,
+            line_number=2,
+        )
+
+        session = session_with_activities(
+            first,
+            second,
+        )
+
+        service = ActivityService()
+
+        assert service.activity_events(
+            session,
+        ) == (
+            first,
+            second,
+        )
+
+    def test_activity_count_returns_number_of_events(self) -> None:
+        """
+        Activity count returns the total number of activity events.
+        """
+
+        session = session_with_activities(
+            activity_event(
+                line_number=1,
+            ),
+            activity_event(
+                sender="Bob",
+                minute=1,
+                line_number=2,
+            ),
+            activity_event(
+                sender="Carol",
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = ActivityService()
+
+        assert service.activity_count(
+            session,
+        ) == 3
+
+    def test_activity_count_returns_zero_for_empty_session(self) -> None:
+        """
+        Empty sessions have zero activity events.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.activity_count(
+            session,
+        ) == 0
+
+
+# ============================================================================
+# Activity Counts
+# ============================================================================
+
+
+class TestActivityCounts:
+    """
+    Test activity classification counts.
+    """
+
+    def test_activity_counts_group_events_by_type(self) -> None:
+        """
+        Activity events are counted by ActivityType.
+        """
+
+        session = session_with_activities(
+            activity_event(
+                activity_type=ActivityType.INSIGHT,
+                line_number=1,
+            ),
+            activity_event(
+                activity_type=ActivityType.INSIGHT,
+                minute=1,
+                line_number=2,
+            ),
+            activity_event(
+                activity_type=ActivityType.PRAYER_SESSION,
+                minute=2,
+                line_number=3,
+            ),
+        )
+
+        service = ActivityService()
+
+        assert service.activity_counts(
+            session,
+        ) == {
+            ActivityType.INSIGHT: 2,
+            ActivityType.PRAYER_SESSION: 1,
+        }
+
+    def test_empty_activity_returns_empty_counts(self) -> None:
+        """
+        No activity events produce empty counts.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.activity_counts(
+            session,
+        ) == {}
+
+
+# ============================================================================
+# Activity Boundaries
+# ============================================================================
+
+
+class TestActivityBoundaries:
+    """
+    Test first and last activity lookup.
+    """
+
+    def test_first_activity_returns_earliest_event(self) -> None:
+        """
+        The earliest activity event is returned.
+        """
+
+        first = activity_event(
+            sender="Alice",
+            minute=1,
+            line_number=1,
+        )
+
+        second = activity_event(
+            sender="Bob",
+            minute=2,
+            line_number=2,
+        )
+
+        session = session_with_activities(
+            second,
+            first,
+        )
+
+        service = ActivityService()
+
+        assert service.first_activity(
+            session,
+        ) is first
+
+    def test_first_activity_returns_none_when_no_events_exist(self) -> None:
+        """
+        No activity events produce None.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.first_activity(
+            session,
+        ) is None
+
+    def test_last_activity_returns_latest_event(self) -> None:
+        """
+        The latest activity event is returned.
+        """
+
+        first = activity_event(
+            sender="Alice",
+            minute=1,
+            line_number=1,
+        )
+
+        last = activity_event(
+            sender="Bob",
+            minute=2,
+            line_number=2,
+        )
+
+        session = session_with_activities(
+            first,
+            last,
+        )
+
+        service = ActivityService()
+
+        assert service.last_activity(
+            session,
+        ) is last
+
+    def test_last_activity_returns_none_when_no_events_exist(self) -> None:
+        """
+        No activity events produce None.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.last_activity(
+            session,
+        ) is None
+
+
+# ============================================================================
+# Activity Lookup
+# ============================================================================
+
+
+class TestActivityLookup:
+    """
+    Test activity type filtering.
+    """
+
+    def test_activity_events_by_type_returns_matching_events(self) -> None:
+        """
+        Only events of the requested type are returned.
+        """
+
+        insight = activity_event(
+            activity_type=ActivityType.INSIGHT,
+            line_number=1,
+        )
+
+        prayer_session = activity_event(
+            activity_type=ActivityType.PRAYER_SESSION,
+            minute=1,
+            line_number=2,
+        )
+
+        session = session_with_activities(
+            insight,
+            prayer_session,
+        )
+
+        service = ActivityService()
+
+        assert service.activity_events_by_type(
+            session,
+            ActivityType.INSIGHT,
+        ) == (
+            insight,
+        )
+
+    def test_activity_events_by_type_returns_empty_tuple_when_no_match(
+        self,
+    ) -> None:
+        """
+        No matching activity type produces an empty tuple.
+        """
+
+        session = session_with_activities(
+            activity_event(
+                activity_type=ActivityType.INSIGHT,
+            ),
+        )
+
+        service = ActivityService()
+
+        assert service.activity_events_by_type(
+            session,
+            ActivityType.PRAYER_SESSION,
+        ) == ()
+
+    def test_has_activity_returns_true_when_type_exists(self) -> None:
+        """
+        has_activity returns True for an existing activity type.
+        """
+
+        session = session_with_activities(
+            activity_event(
+                activity_type=ActivityType.INSIGHT,
+            ),
+        )
+
+        service = ActivityService()
+
+        assert service.has_activity(
+            session,
+            ActivityType.INSIGHT,
+        ) is True
+
+    def test_has_activity_returns_false_when_type_does_not_exist(
+        self,
+    ) -> None:
+        """
+        has_activity returns False for a missing activity type.
+        """
+
+        session = session_with_activities(
+            activity_event(
+                activity_type=ActivityType.INSIGHT,
+            ),
+        )
+
+        service = ActivityService()
+
+        assert service.has_activity(
+            session,
+            ActivityType.PRAYER_SESSION,
+        ) is False
+
+
+# ============================================================================
+# Convenience Methods
+# ============================================================================
+
+
+class TestConvenienceMethods:
+    """
+    Test service convenience methods.
+    """
+
+    def test_has_activities_returns_true_when_activities_exist(self) -> None:
+        """
+        has_activities returns True when activities exist.
+        """
+
+        session = session_with_activities(
+            activity_event(),
+        )
+
+        service = ActivityService()
+
+        assert service.has_activities(
+            session,
+        ) is True
+
+    def test_has_activities_returns_false_for_empty_session(self) -> None:
+        """
+        has_activities returns False for an empty session.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.has_activities(
+            session,
+        ) is False
+
+    def test_is_empty_returns_true_for_empty_session(self) -> None:
+        """
+        Empty sessions are identified correctly.
+        """
+
+        service = ActivityService()
+
+        session = Session(
+            session_date=date(
+                2026,
+                7,
+                23,
+            ),
+        )
+
+        assert service.is_empty(
+            session,
+        ) is True
+
+    def test_is_empty_returns_false_for_non_empty_session(self) -> None:
+        """
+        Sessions containing activities are not empty.
+        """
+
+        session = session_with_activities(
+            activity_event(),
+        )
+
+        service = ActivityService()
+
+        assert service.is_empty(
+            session,
+        ) is False
+
+
+# ============================================================================
+# Representations
+# ============================================================================
+
+
+class TestActivityServiceRepresentations:
+    """
+    Test service string representations.
+    """
+
+    def test_repr_contains_service_name_and_builder_name(self) -> None:
+        """
+        repr identifies the service and its builder.
+        """
+
+        service = ActivityService()
+
+        result = repr(
+            service,
+        )
+
+        assert "ActivityService" in result
+        assert "SessionBuilder" in result
+
+    def test_str_matches_repr(self) -> None:
+        """
+        str returns the official representation.
+        """
+
+        service = ActivityService()
+
+        assert str(
+            service,
+        ) == repr(
+            service,
+        )
+
+============================================================
+FILE: src\domain\models\attendance_event.py
+============================================================
+# src/domain/models/attendance_event.py
+
+"""
+Attendance Event Domain Model
+
+Purpose
+-------
+Represents one participation event within a session.
+
+Domain Rule
+-----------
+Attendance is participation.
+
+Any recognized participation in a session produces
+a PRESENT AttendanceEvent.
+
+There are no LATE, ABSENT, or UNKNOWN attendance
+classifications in this domain model.
+
+Responsibilities
+----------------
+- Represent a participant's participation event.
+- Validate attendance data.
+- Preserve the originating source message.
+- Provide attendance-related business behaviour.
+- Remain technology independent.
+
+Notes
+-----
+- Immutable.
+- Derived from a Message.
+- Timestamp is obtained from the source message.
+- Contains no UI, pandas or infrastructure dependencies.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from dataclasses import dataclass
+from datetime import date, datetime, time
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from .message import Message
+
+# ============================================================================
+# Attendance Event
+# ============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class AttendanceEvent:
+    """
+    Immutable participation event.
+
+    An AttendanceEvent represents one recognized instance
+    of participation by an attendee within a session.
+
+    Attendance is intentionally simple:
+
+        Participation
+            â†“
+          PRESENT
+
+    The event does not represent absence, lateness, or
+    an unknown attendance state.
+    """
+
+    attendee: str
+    source_message: Message
+
+    def __post_init__(self) -> None:
+        """
+        Validate the attendance event.
+        """
+
+        attendee = self.attendee.strip()
+
+        if not attendee:
+            raise ValueError(
+                "attendee cannot be empty.",
+            )
+
+        if not isinstance(
+            self.source_message,
+            Message,
+        ):
+            raise TypeError(
+                "source_message must be a Message.",
+            )
+
+        object.__setattr__(
+            self,
+            "attendee",
+            attendee,
+        )
+
+    # =========================================================================
+    # Derived Properties
+    # =========================================================================
+
+    @property
+    def timestamp(self) -> datetime:
+        """
+        Return the participation timestamp.
+        """
+
+        return self.source_message.timestamp
+
+    @property
+    def event_date(self) -> date:
+        """
+        Return the participation date.
+        """
+
+        return self.timestamp.date()
+
+    @property
+    def event_time(self) -> time:
+        """
+        Return the participation time.
+        """
+
+        return self.timestamp.time()
+
+    @property
+    def line_number(self) -> int:
+        """
+        Return the original source line number.
+        """
+
+        return self.source_message.line_number
+
+    @property
+    def attendee_name(self) -> str:
+        """
+        Return the attendee name.
+        """
+
+        return self.attendee
+
+    @property
+    def sender(self) -> str:
+        """
+        Return the sender from the source message.
+        """
+
+        return self.source_message.sender
+
+    # =========================================================================
+    # Attendance Classification
+    # =========================================================================
+
+    @property
+    def is_present(self) -> bool:
+        """
+        Return True because this event represents participation.
+        """
+
+        return True
+
+    @property
+    def is_absent(self) -> bool:
+        """
+        Return False because absence is not represented by an
+        AttendanceEvent in the OYBS domain.
+        """
+
+        return False
+
+    @property
+    def is_late(self) -> bool:
+        """
+        Return False because lateness is not represented by an
+        AttendanceEvent in the OYBS domain.
+        """
+
+        return False
+
+    # =========================================================================
+    # Comparison
+    # =========================================================================
+
+    def occurred_before(
+        self,
+        other: "AttendanceEvent",
+    ) -> bool:
+        """
+        Return True if this event occurred before another.
+        """
+
+        return self.timestamp < other.timestamp
+
+    def occurred_after(
+        self,
+        other: "AttendanceEvent",
+    ) -> bool:
+        """
+        Return True if this event occurred after another.
+        """
+
+        return self.timestamp > other.timestamp
+
+    def same_attendee(
+        self,
+        other: "AttendanceEvent",
+    ) -> bool:
+        """
+        Return True if both events belong to the same attendee.
+        """
+
+        return self.attendee.casefold() == other.attendee.casefold()
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    def to_dict(self) -> dict[str, object]:
+        """
+        Return dictionary representation.
+        """
+
+        return {
+            "attendee": self.attendee,
+            "timestamp": self.timestamp,
+            "sender": self.sender,
+            "line_number": self.line_number,
+        }
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __str__(self) -> str:
+        """
+        Return readable representation.
+        """
+
+        return (
+            "AttendanceEvent("
+            f"attendee='{self.attendee}', "
+            f"type='PRESENT', "
+            f"time='{self.timestamp}')"
+        )
+
+============================================================
+FILE: src\domain\models\done_event.py
+============================================================
+# src/domain/models/done_event.py
+
+"""
+Done Event Domain Model
+
+Purpose:
+    Represents a validated "Done" acknowledgement derived from a
+    WhatsApp message.
+
+Responsibilities:
+    - Represent a member's acknowledgement of the Scripture Reading.
+    - Preserve the originating message.
+    - Provide Done-related business behaviour.
+    - Remain technology independent.
+
+Notes:
+    - Immutable.
+    - Derived from a Message.
+    - Timestamp is obtained from the source message.
+    - Contains no UI, pandas or infrastructure dependencies.
+
+Author:
+    OYBS Attendance Dashboard
+
+Created:
+    July 2026
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, time
+
+from .message import Message
+
+
+@dataclass(frozen=True, slots=True)
+class DoneEvent:
+    """
+    Immutable Done acknowledgement.
+
+    Attributes:
+        attendee:
+            Member who acknowledged the Scripture Reading.
+
+        source_message:
+            Message that generated this event.
+    """
+
+    attendee: str
+    source_message: Message
+
+    def __post_init__(self) -> None:
+        """Validate the Done event."""
+
+        attendee = self.attendee.strip()
+
+        if not attendee:
+            raise ValueError("attendee cannot be empty.")
+
+        if not isinstance(self.source_message, Message):
+            raise TypeError("source_message must be a Message.")
+
+        object.__setattr__(self, "attendee", attendee)
+
+    # ------------------------------------------------------------------
+    # Derived Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def timestamp(self) -> datetime:
+        """Return the acknowledgement timestamp."""
+        return self.source_message.timestamp
+
+    @property
+    def event_date(self) -> date:
+        """Return the acknowledgement date."""
+        return self.timestamp.date()
+
+    @property
+    def event_time(self) -> time:
+        """Return the acknowledgement time."""
+        return self.timestamp.time()
+
+    @property
+    def sender(self) -> str:
+        """Return the original sender."""
+        return self.source_message.sender
+
+    @property
+    def line_number(self) -> int:
+        """Return the original line number."""
+        return self.source_message.line_number
+
+    @property
+    def attendee_name(self) -> str:
+        """Return the attendee name."""
+        return self.attendee
+
+    @property
+    def message_text(self) -> str:
+        """Return the original message text."""
+        return self.source_message.content
+
+    # ------------------------------------------------------------------
+    # Comparison
+    # ------------------------------------------------------------------
+
+    def occurred_before(self, other: "DoneEvent") -> bool:
+        """Return True if this event occurred before another."""
+        return self.timestamp < other.timestamp
+
+    def occurred_after(self, other: "DoneEvent") -> bool:
+        """Return True if this event occurred after another."""
+        return self.timestamp > other.timestamp
+
+    def same_attendee(self, other: "DoneEvent") -> bool:
+        """Return True if both events belong to the same attendee."""
+        return self.attendee.casefold() == other.attendee.casefold()
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def to_dict(self) -> dict[str, object]:
+        """Return dictionary representation."""
+
+        return {
+            "attendee": self.attendee,
+            "timestamp": self.timestamp,
+            "sender": self.sender,
+            "line_number": self.line_number,
+            "message": self.message_text,
+        }
+
+    # ------------------------------------------------------------------
+    # Dunder Methods
+    # ------------------------------------------------------------------
+
+    def __str__(self) -> str:
+        """Return a readable representation."""
+
+        return f"DoneEvent(" f"attendee='{self.attendee}', " f"time='{self.timestamp}')"
+
+============================================================
+FILE: src\domain\models\activity_event.py
+============================================================
+# src/domain/models/activity_event.py
+
+"""
+Activity Event Domain Model
+
+Purpose
+-------
+Represents a validated activity derived from a message.
+
+Canonical Activity Types
+------------------------
+- Scripture Reading
+- Insight
+- Discussion
+- Announcement
+- Done
+- Prayer Session
+
+Prayer Session Boundary Rules
+-----------------------------
+Opening prayer markers and closing prayer markers are not
+independent activity types.
+
+They are boundary markers used to identify a Prayer Session.
+
+A Prayer Session:
+
+    Opening Prayer
+        â†“
+    Prayer Session
+        â†“
+    Closing Prayer
+
+If a closing prayer marker is not found, the prayer session
+is considered closed automatically when the next session begins.
+
+Domain Context
+--------------
+This platform analyzes participation in an online Bible Study
+community. It is not a church service analytics system.
+
+Therefore, the model does not contain:
+
+- Worship
+- Message
+- Offering
+- Tithe
+- Generic church-service categories
+
+Notes
+-----
+- Immutable.
+- Derived from a Message.
+- Timestamp is obtained from the source message.
+- Contains no UI, pandas, or infrastructure dependencies.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, time
+
+from src.domain.enums.activity_type import ActivityType
+
+from .message import Message
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityEvent:
+    """
+    Immutable activity event.
+
+    Attributes
+    ----------
+    activity_type:
+        Canonical type of activity.
+
+    source_message:
+        Message that generated this activity event.
+    """
+
+    activity_type: ActivityType
+    source_message: Message
+
+    def __post_init__(self) -> None:
+        """Validate the activity event."""
+
+        if not isinstance(
+            self.activity_type,
+            ActivityType,
+        ):
+            raise TypeError(
+                "activity_type must be an ActivityType.",
+            )
+
+        if not isinstance(
+            self.source_message,
+            Message,
+        ):
+            raise TypeError(
+                "source_message must be a Message.",
+            )
+
+    # =========================================================================
+    # Derived Properties
+    # =========================================================================
+
+    @property
+    def timestamp(self) -> datetime:
+        """Return the activity timestamp."""
+
+        return self.source_message.timestamp
+
+    @property
+    def event_date(self) -> date:
+        """Return the activity date."""
+
+        return self.timestamp.date()
+
+    @property
+    def event_time(self) -> time:
+        """Return the activity time."""
+
+        return self.timestamp.time()
+
+    @property
+    def sender(self) -> str:
+        """Return the message sender."""
+
+        return self.source_message.sender
+
+    @property
+    def line_number(self) -> int:
+        """Return the original source line number."""
+
+        return self.source_message.line_number
+
+    @property
+    def activity_name(self) -> str:
+        """Return the human-readable activity name."""
+
+        return self.activity_type.value
+
+    # =========================================================================
+    # Activity Classification
+    # =========================================================================
+
+    @property
+    def is_scripture_reading(self) -> bool:
+        """Return True if this is a Scripture Reading activity."""
+
+        return self.activity_type is ActivityType.SCRIPTURE_READING
+
+    @property
+    def is_insight(self) -> bool:
+        """Return True if this is an Insight activity."""
+
+        return self.activity_type is ActivityType.INSIGHT
+
+    @property
+    def is_discussion(self) -> bool:
+        """Return True if this is a Discussion activity."""
+
+        return self.activity_type is ActivityType.DISCUSSION
+
+    @property
+    def is_announcement(self) -> bool:
+        """Return True if this is an Announcement activity."""
+
+        return self.activity_type is ActivityType.ANNOUNCEMENT
+
+    @property
+    def is_done(self) -> bool:
+        """Return True if this is a Done activity."""
+
+        return self.activity_type is ActivityType.DONE
+
+    @property
+    def is_prayer_session(self) -> bool:
+        """Return True if this is a Prayer Session activity."""
+
+        return self.activity_type is ActivityType.PRAYER_SESSION
+
+    # =========================================================================
+    # Comparison
+    # =========================================================================
+
+    def occurred_before(
+        self,
+        other: ActivityEvent,
+    ) -> bool:
+        """Return True if this event occurred before another."""
+
+        return self.timestamp < other.timestamp
+
+    def occurred_after(
+        self,
+        other: ActivityEvent,
+    ) -> bool:
+        """Return True if this event occurred after another."""
+
+        return self.timestamp > other.timestamp
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a dictionary representation."""
+
+        return {
+            "activity_type": self.activity_type.value,
+            "timestamp": self.timestamp,
+            "sender": self.sender,
+            "line_number": self.line_number,
+        }
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __str__(self) -> str:
+        """Return a readable representation."""
+
+        return (
+            "ActivityEvent("
+            f"type='{self.activity_type.value}', "
+            f"time='{self.timestamp}')"
+        )
+

@@ -209,10 +209,13 @@ def test_rank_total_participation_combines_attendance_and_activity() -> None:
 def test_rank_total_participation_returns_empty_for_empty_input() -> None:
     """Empty attendance and activity inputs should return empty rankings."""
 
-    assert rank_total_participation(
-        [],
-        [],
-    ) == ()
+    assert (
+        rank_total_participation(
+            [],
+            [],
+        )
+        == ()
+    )
 
 
 # ============================================================================
@@ -246,10 +249,13 @@ def test_top_members_returns_all_when_limit_exceeds_size() -> None:
         ("Bob", 8),
     )
 
-    assert top_members(
-        rankings,
-        limit=10,
-    ) == rankings
+    assert (
+        top_members(
+            rankings,
+            limit=10,
+        )
+        == rankings
+    )
 
 
 def test_top_members_with_zero_limit_returns_empty() -> None:
@@ -260,18 +266,19 @@ def test_top_members_with_zero_limit_returns_empty() -> None:
         ("Bob", 8),
     )
 
-    assert top_members(
-        rankings,
-        limit=0,
-    ) == ()
+    assert (
+        top_members(
+            rankings,
+            limit=0,
+        )
+        == ()
+    )
 
 
 def test_top_members_rejects_negative_limit() -> None:
     """Negative limits should be rejected."""
 
-    rankings = (
-        ("Alice", 10),
-    )
+    rankings = (("Alice", 10),)
 
     try:
         top_members(
@@ -300,10 +307,13 @@ def test_participant_rank_returns_one_based_position() -> None:
         ("Charlie", 6),
     )
 
-    assert participant_rank(
-        "Bob",
-        rankings,
-    ) == 2
+    assert (
+        participant_rank(
+            "Bob",
+            rankings,
+        )
+        == 2
+    )
 
 
 def test_participant_rank_is_case_insensitive() -> None:
@@ -314,10 +324,13 @@ def test_participant_rank_is_case_insensitive() -> None:
         ("Bob", 8),
     )
 
-    assert participant_rank(
-        "alice",
-        rankings,
-    ) == 1
+    assert (
+        participant_rank(
+            "alice",
+            rankings,
+        )
+        == 1
+    )
 
 
 def test_participant_rank_returns_none_for_unknown_participant() -> None:
@@ -328,10 +341,13 @@ def test_participant_rank_returns_none_for_unknown_participant() -> None:
         ("Bob", 8),
     )
 
-    assert participant_rank(
-        "Charlie",
-        rankings,
-    ) is None
+    assert (
+        participant_rank(
+            "Charlie",
+            rankings,
+        )
+        is None
+    )
 
 
 def test_participant_rank_supports_generator_input() -> None:
@@ -342,12 +358,12 @@ def test_participant_rank_supports_generator_input() -> None:
         ("Bob", 8),
     )
 
-    ranking_generator = (
-        ranking
-        for ranking in rankings
-    )
+    ranking_generator = (ranking for ranking in rankings)
 
-    assert participant_rank(
-        "Bob",
-        ranking_generator,
-    ) == 2
+    assert (
+        participant_rank(
+            "Bob",
+            ranking_generator,
+        )
+        == 2
+    )

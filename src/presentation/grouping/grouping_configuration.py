@@ -1,4 +1,4 @@
-﻿# src/presentation/grouping/grouping_configuration.py
+# src/presentation/grouping/grouping_configuration.py
 
 from __future__ import annotations
 
@@ -33,21 +33,65 @@ class GroupingConfiguration:
             )
 
     @classmethod
+    def daily(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return daily grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.DAY,
+        )
+
+    @classmethod
     def weekly(
         cls,
         week_start_day: int = 6,
     ) -> GroupingConfiguration:
-        """
-        Return weekly grouping configuration.
-
-        Python weekday convention:
-            Monday = 0
-            Sunday = 6
-        """
+        """Return weekly grouping configuration."""
 
         return cls(
             period=GroupingPeriod.WEEK,
             week_start_day=week_start_day,
+        )
+
+    @classmethod
+    def monthly(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return monthly grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.MONTH,
+        )
+
+    @classmethod
+    def first_half(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return first-half-of-year grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.FIRST_HALF,
+        )
+
+    @classmethod
+    def second_half(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return second-half-of-year grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.SECOND_HALF,
+        )
+
+    @classmethod
+    def yearly(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return yearly grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.YEAR,
         )
 
 

@@ -1,4 +1,4 @@
-﻿# src/presentation/grouping/session_grouping_service.py
+# src/presentation/grouping/session_grouping_service.py
 
 from __future__ import annotations
 
@@ -21,8 +21,22 @@ class SessionGroupingService:
         strategy: GroupingStrategy,
         period: GroupingPeriod,
     ) -> None:
+        if not isinstance(
+            period,
+            GroupingPeriod,
+        ):
+            raise TypeError(
+                "period must be a GroupingPeriod.",
+            )
+
         self._strategy = strategy
         self._period = period
+
+    @property
+    def period(self) -> GroupingPeriod:
+        """Return the active grouping period."""
+
+        return self._period
 
     def group(
         self,
@@ -35,7 +49,6 @@ class SessionGroupingService:
         grouped_sessions = defaultdict(list)
 
         for session in session_collection:
-
             boundary = self._strategy.boundary_for(
                 session.session_date,
             )
@@ -49,7 +62,30 @@ class SessionGroupingService:
                 session,
             )
 
-        groups = tuple(
+        # =====================================================================
+        # TEMPORARY DEBUG
+        # =====================================================================
+
+        print("\n================ SESSION GROUPING DEBUG ================")
+        print("SessionCollection type:", type(session_collection))
+        print("SessionCollection count:", len(session_collection))
+
+        for key, sessions in grouped_sessions.items():
+            print(f"\nGROUP: {key}")
+
+            for index, item in enumerate(sessions):
+                print(
+                    f"  [{index}]",
+                    "type =", type(item),
+                    "module =", type(item).__module__,
+                    "class =", type(item).__name__,
+                    "session_date =",
+                    getattr(item, "session_date", None),
+                )
+
+        print("========================================================\n")
+
+        return tuple(
             SessionGroup(
                 start_date=start_date,
                 end_date=end_date,
@@ -62,8 +98,6 @@ class SessionGroupingService:
                 grouped_sessions.items(),
             )
         )
-
-        return groups
 
 
 __all__ = [

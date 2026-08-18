@@ -70,10 +70,7 @@ def report() -> str:
     """Return representative report data."""
 
     return (
-        "Period: January 2026\n"
-        "Sessions: 31\n"
-        "Participants: 145\n"
-        "Average attendance: 82"
+        "Period: January 2026\nSessions: 31\nParticipants: 145\nAverage attendance: 82"
     )
 
 

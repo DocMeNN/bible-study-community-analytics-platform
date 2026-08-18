@@ -105,7 +105,6 @@ class SessionDetector:
         for index, start_index in enumerate(
             session_start_indexes,
         ):
-
             if index + 1 < len(
                 session_start_indexes,
             ):
@@ -116,9 +115,7 @@ class SessionDetector:
                     ordered_messages,
                 )
 
-            session_messages = ordered_messages[
-                start_index:end_index
-            ]
+            session_messages = ordered_messages[start_index:end_index]
 
             sessions.append(
                 session_messages,
@@ -146,14 +143,12 @@ class SessionDetector:
         for index, message in enumerate(
             messages,
         ):
-
             if not self._is_session_start(
                 message,
             ):
                 continue
 
             if previous_session_start is None:
-
                 indexes.append(
                     index,
                 )
@@ -162,10 +157,7 @@ class SessionDetector:
 
                 continue
 
-            elapsed = (
-                message.timestamp
-                - previous_session_start.timestamp
-            )
+            elapsed = message.timestamp - previous_session_start.timestamp
 
             if elapsed < MINIMUM_SESSION_GAP:
                 continue
@@ -191,11 +183,11 @@ class SessionDetector:
         normalized = message.content.casefold()
 
         return any(
-            keyword.casefold() in normalized
-            for keyword in SESSION_START_KEYWORDS
+            keyword.casefold() in normalized for keyword in SESSION_START_KEYWORDS
         )
 
-    # =========================================================================
+        # =========================================================================
+
     # Validation
     # =========================================================================
 
@@ -212,7 +204,6 @@ class SessionDetector:
         )
 
         for message in validated:
-
             if not isinstance(
                 message,
                 Message,
@@ -233,7 +224,9 @@ class SessionDetector:
     # =========================================================================
 
     @property
-    def minimum_session_gap(self) -> timedelta:
+    def minimum_session_gap(
+        self,
+    ) -> timedelta:
         """
         Return the minimum time gap between sessions.
         """
@@ -241,7 +234,9 @@ class SessionDetector:
         return MINIMUM_SESSION_GAP
 
     @property
-    def name(self) -> str:
+    def name(
+        self,
+    ) -> str:
         """
         Return the detector name.
         """
@@ -252,18 +247,20 @@ class SessionDetector:
     # Dunder Methods
     # =========================================================================
 
-    def __repr__(self) -> str:
+    def __repr__(
+        self,
+    ) -> str:
         """
         Return the official representation.
         """
 
         return (
-            f"{self.__class__.__name__}("
-            f"minimum_session_gap="
-            f"{self.minimum_session_gap})"
+            f"{self.__class__.__name__}(minimum_session_gap={self.minimum_session_gap})"
         )
 
-    def __str__(self) -> str:
+    def __str__(
+        self,
+    ) -> str:
         """
         Return a readable representation.
         """

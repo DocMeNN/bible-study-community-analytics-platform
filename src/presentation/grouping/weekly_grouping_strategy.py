@@ -1,4 +1,4 @@
-﻿# src/presentation/grouping/weekly_grouping_strategy.py
+# src/presentation/grouping/weekly_grouping_strategy.py
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ class WeeklyGroupingStrategy:
     Groups dates into calendar weeks.
 
     Default calendar:
-        Sunday → Saturday
+        Sunday ? Saturday
     """
 
     def __init__(
@@ -42,16 +42,10 @@ class WeeklyGroupingStrategy:
         Return the calendar-week boundary containing the date.
         """
 
-        days_since_start = (
-            session_date.weekday()
-            - self._week_start_day
-        ) % 7
+        days_since_start = (session_date.weekday() - self._week_start_day) % 7
 
-        start_date = (
-            session_date
-            - timedelta(
-                days=days_since_start,
-            )
+        start_date = session_date - timedelta(
+            days=days_since_start,
         )
 
         end_date = start_date + timedelta(

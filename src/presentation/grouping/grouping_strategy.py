@@ -1,4 +1,4 @@
-﻿# src/presentation/grouping/grouping_strategy.py
+# src/presentation/grouping/grouping_strategy.py
 
 from __future__ import annotations
 

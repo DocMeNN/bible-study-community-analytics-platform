@@ -89,7 +89,7 @@ def invalid_response() -> None:
     """
 
     render(
-        ("The AI provider returned an invalid response. " "Please retry your request."),
+        ("The AI provider returned an invalid response. Please retry your request."),
     )
 
 

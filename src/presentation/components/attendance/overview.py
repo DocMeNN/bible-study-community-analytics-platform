@@ -59,5 +59,5 @@ def render(
     metric_cards.render_metric_row(
         formatters.attendance_metrics(
             attendance,
-        )
+        ),
     )

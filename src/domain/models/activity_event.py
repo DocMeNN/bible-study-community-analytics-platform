@@ -223,7 +223,5 @@ class ActivityEvent:
         """Return a readable representation."""
 
         return (
-            "ActivityEvent("
-            f"type='{self.activity_type.value}', "
-            f"time='{self.timestamp}')"
+            f"ActivityEvent(type='{self.activity_type.value}', time='{self.timestamp}')"
         )

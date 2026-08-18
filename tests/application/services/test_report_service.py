@@ -377,17 +377,16 @@ class TestSessionConstruction:
             Session,
         )
 
-        assert len(
-            attendance_service.build_session_calls,
-        ) == 1
+        assert (
+            len(
+                attendance_service.build_session_calls,
+            )
+            == 1
+        )
 
-        assert attendance_service.build_session_calls[0][
-            "session_date"
-        ] == session_date
+        assert attendance_service.build_session_calls[0]["session_date"] == session_date
 
-        assert attendance_service.build_session_calls[0][
-            "messages"
-        ] is messages
+        assert attendance_service.build_session_calls[0]["messages"] is messages
 
 
 # ============================================================================
@@ -638,9 +637,12 @@ class TestConvenienceMethods:
 
         session = empty_session()
 
-        assert service.has_attendance(
-            session,
-        ) is True
+        assert (
+            service.has_attendance(
+                session,
+            )
+            is True
+        )
 
         assert attendance_service.has_attendance_calls == [
             session,
@@ -659,9 +661,12 @@ class TestConvenienceMethods:
 
         session = empty_session()
 
-        assert service.has_activities(
-            session,
-        ) is True
+        assert (
+            service.has_activities(
+                session,
+            )
+            is True
+        )
 
         assert activity_service.has_activities_calls == [
             session,
@@ -676,9 +681,12 @@ class TestConvenienceMethods:
 
         session = empty_session()
 
-        assert service.is_empty(
-            session,
-        ) is True
+        assert (
+            service.is_empty(
+                session,
+            )
+            is True
+        )
 
 
 # ============================================================================

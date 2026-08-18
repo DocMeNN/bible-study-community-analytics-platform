@@ -382,9 +382,12 @@ class TestAttendanceEvents:
 
         service = AttendanceService()
 
-        assert service.attendance_count(
-            session,
-        ) == 2
+        assert (
+            service.attendance_count(
+                session,
+            )
+            == 2
+        )
 
     def test_attendance_count_is_zero_for_empty_session(self) -> None:
         """
@@ -401,9 +404,12 @@ class TestAttendanceEvents:
             )
         )
 
-        assert service.attendance_count(
-            session,
-        ) == 0
+        assert (
+            service.attendance_count(
+                session,
+            )
+            == 0
+        )
 
 
 # ============================================================================
@@ -459,10 +465,13 @@ class TestAttendanceRate:
 
         service = AttendanceService()
 
-        assert service.attendance_rate(
-            session,
-            expected_attendees=0,
-        ) == 0.0
+        assert (
+            service.attendance_rate(
+                session,
+                expected_attendees=0,
+            )
+            == 0.0
+        )
 
     def test_negative_expected_attendees_raise_value_error(self) -> None:
         """
@@ -516,10 +525,13 @@ class TestMemberAttendanceRate:
             name="Alice",
         )
 
-        assert service.member_attendance_rate(
-            member,
-            session,
-        ) == 100.0
+        assert (
+            service.member_attendance_rate(
+                member,
+                session,
+            )
+            == 100.0
+        )
 
     def test_member_matching_is_case_insensitive(self) -> None:
         """
@@ -538,10 +550,13 @@ class TestMemberAttendanceRate:
             name="alice",
         )
 
-        assert service.member_attendance_rate(
-            member,
-            session,
-        ) == 100.0
+        assert (
+            service.member_attendance_rate(
+                member,
+                session,
+            )
+            == 100.0
+        )
 
     def test_member_who_did_not_participate_has_zero_rate(self) -> None:
         """
@@ -560,10 +575,13 @@ class TestMemberAttendanceRate:
             name="Bob",
         )
 
-        assert service.member_attendance_rate(
-            member,
-            session,
-        ) == 0.0
+        assert (
+            service.member_attendance_rate(
+                member,
+                session,
+            )
+            == 0.0
+        )
 
 
 # ============================================================================
@@ -615,9 +633,12 @@ class TestAttendanceCounts:
             )
         )
 
-        assert service.attendance_counts(
-            session,
-        ) == {}
+        assert (
+            service.attendance_counts(
+                session,
+            )
+            == {}
+        )
 
 
 # ============================================================================
@@ -684,9 +705,12 @@ class TestDoneEvents:
 
         service = AttendanceService()
 
-        assert service.done_count(
-            session,
-        ) == 3
+        assert (
+            service.done_count(
+                session,
+            )
+            == 3
+        )
 
     def test_first_done_returns_earliest_done_event(self) -> None:
         """
@@ -712,9 +736,12 @@ class TestDoneEvents:
 
         service = AttendanceService()
 
-        assert service.first_done(
-            session,
-        ) is first
+        assert (
+            service.first_done(
+                session,
+            )
+            is first
+        )
 
     def test_first_done_returns_none_when_no_done_events_exist(self) -> None:
         """
@@ -731,9 +758,12 @@ class TestDoneEvents:
             )
         )
 
-        assert service.first_done(
-            session,
-        ) is None
+        assert (
+            service.first_done(
+                session,
+            )
+            is None
+        )
 
 
 # ============================================================================
@@ -772,9 +802,12 @@ class TestParticipantInformation:
 
         service = AttendanceService()
 
-        assert service.participant_count(
-            session,
-        ) == 2
+        assert (
+            service.participant_count(
+                session,
+            )
+            == 2
+        )
 
     def test_participants_returns_observed_participants(self) -> None:
         """
@@ -976,9 +1009,12 @@ class TestConvenienceMethods:
 
         service = AttendanceService()
 
-        assert service.has_attendance(
-            session,
-        ) is True
+        assert (
+            service.has_attendance(
+                session,
+            )
+            is True
+        )
 
     def test_has_attendance_returns_false_when_no_attendance_exists(
         self,
@@ -997,9 +1033,12 @@ class TestConvenienceMethods:
             )
         )
 
-        assert service.has_attendance(
-            session,
-        ) is False
+        assert (
+            service.has_attendance(
+                session,
+            )
+            is False
+        )
 
     def test_has_done_events_returns_true_when_done_events_exist(
         self,
@@ -1014,9 +1053,12 @@ class TestConvenienceMethods:
 
         service = AttendanceService()
 
-        assert service.has_done_events(
-            session,
-        ) is True
+        assert (
+            service.has_done_events(
+                session,
+            )
+            is True
+        )
 
     def test_has_done_events_returns_false_when_no_done_events_exist(
         self,
@@ -1035,9 +1077,12 @@ class TestConvenienceMethods:
             )
         )
 
-        assert service.has_done_events(
-            session,
-        ) is False
+        assert (
+            service.has_done_events(
+                session,
+            )
+            is False
+        )
 
     def test_is_empty_returns_true_for_empty_session(self) -> None:
         """
@@ -1054,9 +1099,12 @@ class TestConvenienceMethods:
             )
         )
 
-        assert service.is_empty(
-            session,
-        ) is True
+        assert (
+            service.is_empty(
+                session,
+            )
+            is True
+        )
 
     def test_is_empty_returns_false_for_non_empty_session(self) -> None:
         """
@@ -1069,9 +1117,12 @@ class TestConvenienceMethods:
 
         service = AttendanceService()
 
-        assert service.is_empty(
-            session,
-        ) is False
+        assert (
+            service.is_empty(
+                session,
+            )
+            is False
+        )
 
 
 # ============================================================================

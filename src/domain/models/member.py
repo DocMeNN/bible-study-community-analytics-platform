@@ -180,4 +180,4 @@ class Member:
     def __repr__(self) -> str:
         """Return developer representation."""
 
-        return f"Member(" f"name={self.name!r}, " f"member_id={self.member_id!r})"
+        return f"Member(name={self.name!r}, member_id={self.member_id!r})"

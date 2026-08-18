@@ -185,7 +185,7 @@ def _parse_timestamp(
 
     except ValueError as exc:
         raise ParsingError(
-            (f"Invalid timestamp " f"'{value}' on line " f"{line_number}.")
+            (f"Invalid timestamp '{value}' on line {line_number}.")
         ) from exc
 
 

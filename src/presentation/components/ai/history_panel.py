@@ -47,9 +47,7 @@ def render(
         return
 
     for title, content in history.items():
-
         with st.expander(title):
-
             st.markdown(content)
 
 

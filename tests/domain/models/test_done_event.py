@@ -86,13 +86,16 @@ def test_date_and_time_properties(
 ) -> None:
     """Date and time should be derived from the source message."""
     assert done_event.event_date == datetime(2026, 7, 22).date()
-    assert done_event.event_time == datetime(
-        2026,
-        7,
-        22,
-        8,
-        30,
-    ).time()
+    assert (
+        done_event.event_time
+        == datetime(
+            2026,
+            7,
+            22,
+            8,
+            30,
+        ).time()
+    )
 
 
 def test_source_metadata_is_exposed(

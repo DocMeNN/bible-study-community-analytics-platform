@@ -1,0 +1,4450 @@
+
+
+# src/presentation/context.py
+
+"""
+Presentation Context
+
+Purpose
+-------
+Provides a centralized state manager for the Presentation layer.
+
+Responsibilities
+----------------
+- Manage Streamlit session state.
+- Store the active SessionCollection.
+- Store presentation grouping state.
+- Store the currently selected Session.
+- Provide access to application services.
+- Provide access to presentation controllers.
+- Provide access to presentation ViewModels.
+- Store presentation configuration values.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No parsing.
+- No Infrastructure access outside object composition.
+- No Domain calculations.
+
+Multi-Level Session Presentation
+--------------------------------
+The Presentation layer stores the complete imported SessionCollection.
+
+The Presentation layer may group Sessions for navigation.
+
+The Domain remains centered on Daily Session.
+
+The presentation flow is:
+
+SessionCollection
+        ?
+Presentation Scope
+        ?
+Session Grouping
+        ?
+Selected Session Group
+        ?
+Selected Daily Session
+        ?
+Analytics
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Final, cast
+
+import streamlit as st
+
+from src.application.services.activity_service import ActivityService
+from src.application.services.ai_service import AIService
+from src.application.services.attendance_service import AttendanceService
+from src.application.services.dashboard_service import DashboardService
+from src.application.services.import_service import ImportService
+from src.application.services.report_service import ReportService
+from src.config.ai_config import load_ai_config
+from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
+from src.presentation.controllers.ai_controller import AIController
+from src.presentation.grouping.daily_grouping_strategy import (
+    DailyGroupingStrategy,
+)
+from src.presentation.grouping.first_half_grouping_strategy import (
+    FirstHalfGroupingStrategy,
+)
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.grouping_strategy import GroupingStrategy
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.grouping.monthly_grouping_strategy import (
+    MonthlyGroupingStrategy,
+)
+from src.presentation.grouping.second_half_grouping_strategy import (
+    SecondHalfGroupingStrategy,
+)
+from src.presentation.grouping.session_grouping_service import (
+    SessionGroupingService,
+)
+from src.presentation.grouping.weekly_grouping_strategy import (
+    WeeklyGroupingStrategy,
+)
+from src.presentation.grouping.yearly_grouping_strategy import (
+    YearlyGroupingStrategy,
+)
+from src.presentation.viewmodels.activity_viewmodel import ActivityViewModel
+from src.presentation.viewmodels.ai_viewmodel import AIViewModel
+from src.presentation.viewmodels.attendance_viewmodel import (
+    AttendanceViewModel,
+)
+from src.presentation.viewmodels.dashboard_viewmodel import (
+    DashboardViewModel,
+)
+from src.presentation.viewmodels.report_viewmodel import ReportViewModel
+
+_SESSION_COLLECTION_KEY: Final = "session_collection"
+_SELECTED_SESSION_DATE_KEY: Final = "selected_session_date"
+_SELECTED_GROUP_KEY: Final = "selected_session_group"
+_EXPECTED_ATTENDEES_KEY: Final = "expected_attendees"
+
+_GROUPING_SERVICE_KEY: Final = "session_grouping_service"
+_GROUPING_CONFIGURATION_KEY: Final = "grouping_configuration"
+
+_ATTENDANCE_SERVICE_KEY: Final = "attendance_service"
+_ACTIVITY_SERVICE_KEY: Final = "activity_service"
+_DASHBOARD_SERVICE_KEY: Final = "dashboard_service"
+_REPORT_SERVICE_KEY: Final = "report_service"
+_IMPORT_SERVICE_KEY: Final = "import_service"
+
+_AI_SERVICE_KEY: Final = "ai_service"
+_AI_CONTROLLER_KEY: Final = "ai_controller"
+
+_AI_VIEWMODEL_KEY: Final = "ai_viewmodel"
+_ATTENDANCE_VIEWMODEL_KEY: Final = "attendance_viewmodel"
+_ACTIVITY_VIEWMODEL_KEY: Final = "activity_viewmodel"
+_DASHBOARD_VIEWMODEL_KEY: Final = "dashboard_viewmodel"
+_REPORT_VIEWMODEL_KEY: Final = "report_viewmodel"
+
+
+def _build_grouping_strategy(
+    configuration: GroupingConfiguration,
+) -> GroupingStrategy:
+    """
+    Build the Presentation grouping strategy for a configuration.
+
+    The comparison is performed using the enum value rather than enum
+    object identity to remain robust across Streamlit reload boundaries.
+    """
+
+    period = configuration.period.value
+
+    if period == GroupingPeriod.DAY.value:
+
+        return DailyGroupingStrategy()
+
+    if period == GroupingPeriod.WEEK.value:
+
+        return WeeklyGroupingStrategy(
+            week_start_day=configuration.week_start_day,
+        )
+
+    if period == GroupingPeriod.MONTH.value:
+
+        return MonthlyGroupingStrategy()
+
+    if period == GroupingPeriod.FIRST_HALF.value:
+
+        return FirstHalfGroupingStrategy()
+
+    if period == GroupingPeriod.SECOND_HALF.value:
+
+        return SecondHalfGroupingStrategy()
+
+    if period == GroupingPeriod.YEAR.value:
+
+        return YearlyGroupingStrategy()
+
+    raise ValueError(
+        f"Unsupported grouping period: {configuration.period}.",
+    )
+
+
+def _build_grouping_service(
+    configuration: GroupingConfiguration,
+) -> SessionGroupingService:
+    """
+    Build a SessionGroupingService from a configuration.
+    """
+
+    return SessionGroupingService(
+        strategy=_build_grouping_strategy(
+            configuration,
+        ),
+        period=configuration.period,
+    )
+
+
+def initialize() -> None:
+    """
+    Initialize the Presentation Context.
+
+    Safe to call multiple times.
+    """
+
+    state = st.session_state
+
+    state.setdefault(
+        _SESSION_COLLECTION_KEY,
+        None,
+    )
+
+    state.setdefault(
+        _SELECTED_SESSION_DATE_KEY,
+        None,
+    )
+
+    state.setdefault(
+        _SELECTED_GROUP_KEY,
+        None,
+    )
+
+    state.setdefault(
+        _EXPECTED_ATTENDEES_KEY,
+        0,
+    )
+
+    state.setdefault(
+        _GROUPING_CONFIGURATION_KEY,
+        GroupingConfiguration.weekly(),
+    )
+
+    grouping_configuration = cast(
+        GroupingConfiguration,
+        state[_GROUPING_CONFIGURATION_KEY],
+    )
+
+    state.setdefault(
+        _GROUPING_SERVICE_KEY,
+        _build_grouping_service(
+            grouping_configuration,
+        ),
+    )
+
+    state.setdefault(
+        _ATTENDANCE_SERVICE_KEY,
+        AttendanceService(),
+    )
+
+    state.setdefault(
+        _ACTIVITY_SERVICE_KEY,
+        ActivityService(),
+    )
+
+    state.setdefault(
+        _DASHBOARD_SERVICE_KEY,
+        DashboardService(
+            attendance_service=cast(
+                AttendanceService,
+                state[_ATTENDANCE_SERVICE_KEY],
+            ),
+            activity_service=cast(
+                ActivityService,
+                state[_ACTIVITY_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _REPORT_SERVICE_KEY,
+        ReportService(
+            attendance_service=cast(
+                AttendanceService,
+                state[_ATTENDANCE_SERVICE_KEY],
+            ),
+            activity_service=cast(
+                ActivityService,
+                state[_ACTIVITY_SERVICE_KEY],
+            ),
+            dashboard_service=cast(
+                DashboardService,
+                state[_DASHBOARD_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _IMPORT_SERVICE_KEY,
+        ImportService(),
+    )
+
+    state.setdefault(
+        _AI_SERVICE_KEY,
+        AIService(
+            config=load_ai_config(),
+        ),
+    )
+
+    state.setdefault(
+        _AI_CONTROLLER_KEY,
+        AIController(
+            ai_service=cast(
+                AIService,
+                state[_AI_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _AI_VIEWMODEL_KEY,
+        AIViewModel(
+            controller=cast(
+                AIController,
+                state[_AI_CONTROLLER_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _ATTENDANCE_VIEWMODEL_KEY,
+        AttendanceViewModel(
+            attendance_service=cast(
+                AttendanceService,
+                state[_ATTENDANCE_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _ACTIVITY_VIEWMODEL_KEY,
+        ActivityViewModel(
+            activity_service=cast(
+                ActivityService,
+                state[_ACTIVITY_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _DASHBOARD_VIEWMODEL_KEY,
+        DashboardViewModel(
+            dashboard_service=cast(
+                DashboardService,
+                state[_DASHBOARD_SERVICE_KEY],
+            ),
+        ),
+    )
+
+    state.setdefault(
+        _REPORT_VIEWMODEL_KEY,
+        ReportViewModel(
+            report_service=cast(
+                ReportService,
+                state[_REPORT_SERVICE_KEY],
+            ),
+        ),
+    )
+
+
+def set_session_collection(
+    session_collection: SessionCollection,
+) -> None:
+    """
+    Store the active SessionCollection.
+
+    The first session is selected automatically.
+    """
+
+    st.session_state[_SESSION_COLLECTION_KEY] = session_collection
+
+    if session_collection.has_sessions:
+
+        first_session = session_collection.first_session
+
+        if first_session is not None:
+
+            st.session_state[_SELECTED_SESSION_DATE_KEY] = first_session.session_date
+
+    else:
+
+        st.session_state[_SELECTED_SESSION_DATE_KEY] = None
+
+    st.session_state[_SELECTED_GROUP_KEY] = None
+
+
+def current_session_collection() -> SessionCollection | None:
+    """Return the active SessionCollection."""
+
+    return cast(
+        SessionCollection | None,
+        st.session_state[_SESSION_COLLECTION_KEY],
+    )
+
+
+def has_session_collection() -> bool:
+    """Return True when a SessionCollection is loaded."""
+
+    return current_session_collection() is not None
+
+
+def clear_session_collection() -> None:
+    """Remove the active SessionCollection and selection state."""
+
+    st.session_state[_SESSION_COLLECTION_KEY] = None
+    st.session_state[_SELECTED_SESSION_DATE_KEY] = None
+    st.session_state[_SELECTED_GROUP_KEY] = None
+
+
+def grouping_service() -> SessionGroupingService:
+    """Return the SessionGroupingService."""
+
+    return cast(
+        SessionGroupingService,
+        st.session_state[_GROUPING_SERVICE_KEY],
+    )
+
+
+def grouping_configuration() -> GroupingConfiguration:
+    """Return the active grouping configuration."""
+
+    return cast(
+        GroupingConfiguration,
+        st.session_state[_GROUPING_CONFIGURATION_KEY],
+    )
+
+
+def set_grouping_configuration(
+    configuration: GroupingConfiguration,
+) -> None:
+    """
+    Set the active Presentation grouping configuration.
+    """
+
+    if not isinstance(
+        configuration,
+        GroupingConfiguration,
+    ):
+        raise TypeError(
+            "configuration must be a GroupingConfiguration.",
+        )
+
+    st.session_state[_GROUPING_CONFIGURATION_KEY] = configuration
+
+    st.session_state[_GROUPING_SERVICE_KEY] = _build_grouping_service(
+        configuration,
+    )
+
+    st.session_state[_SELECTED_GROUP_KEY] = None
+
+
+def grouped_sessions() -> tuple:
+    """
+    Return the current presentation grouping.
+    """
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        return ()
+
+    return grouping_service().group(
+        session_collection,
+    )
+
+
+def set_selected_session(
+    session_date: date,
+) -> None:
+    """Select a Session by its session date."""
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        raise RuntimeError(
+            "Cannot select a session without a SessionCollection.",
+        )
+
+    if not session_collection.contains_date(
+        session_date,
+    ):
+        raise ValueError(
+            f"No session exists for date: {session_date}.",
+        )
+
+    st.session_state[_SELECTED_SESSION_DATE_KEY] = session_date
+
+
+def selected_session_date() -> date | None:
+    """Return the selected Session date."""
+
+    return cast(
+        date | None,
+        st.session_state[_SELECTED_SESSION_DATE_KEY],
+    )
+
+
+def current_session() -> Session | None:
+    """Return the currently selected Session."""
+
+    session_collection = current_session_collection()
+
+    if session_collection is None:
+        return None
+
+    session_date = selected_session_date()
+
+    if session_date is None:
+        return None
+
+    return session_collection.get_session(
+        session_date,
+    )
+
+
+def has_selected_session() -> bool:
+    """Return True when a Session is currently selected."""
+
+    return current_session() is not None
+
+
+def set_expected_attendees(
+    value: int,
+) -> None:
+    """Store the expected attendee count."""
+
+    st.session_state[_EXPECTED_ATTENDEES_KEY] = value
+
+
+def expected_attendees() -> int:
+    """Return the configured expected attendee count."""
+
+    return cast(
+        int,
+        st.session_state[_EXPECTED_ATTENDEES_KEY],
+    )
+
+
+def attendance_service() -> AttendanceService:
+    """Return the AttendanceService."""
+
+    return cast(
+        AttendanceService,
+        st.session_state[_ATTENDANCE_SERVICE_KEY],
+    )
+
+
+def activity_service() -> ActivityService:
+    """Return the ActivityService."""
+
+    return cast(
+        ActivityService,
+        st.session_state[_ACTIVITY_SERVICE_KEY],
+    )
+
+
+def dashboard_service() -> DashboardService:
+    """Return the DashboardService."""
+
+    return cast(
+        DashboardService,
+        st.session_state[_DASHBOARD_SERVICE_KEY],
+    )
+
+
+def report_service() -> ReportService:
+    """Return the ReportService."""
+
+    return cast(
+        ReportService,
+        st.session_state[_REPORT_SERVICE_KEY],
+    )
+
+
+def import_service() -> ImportService:
+    """Return the ImportService."""
+
+    return cast(
+        ImportService,
+        st.session_state[_IMPORT_SERVICE_KEY],
+    )
+
+
+def ai_service() -> AIService:
+    """Return the shared AIService."""
+
+    return cast(
+        AIService,
+        st.session_state[_AI_SERVICE_KEY],
+    )
+
+
+def ai_controller() -> AIController:
+    """Return the AIController."""
+
+    return cast(
+        AIController,
+        st.session_state[_AI_CONTROLLER_KEY],
+    )
+
+
+def ai_viewmodel() -> AIViewModel:
+    """Return the shared AIViewModel."""
+
+    return cast(
+        AIViewModel,
+        st.session_state[_AI_VIEWMODEL_KEY],
+    )
+
+
+def attendance_viewmodel() -> AttendanceViewModel:
+    """Return the shared AttendanceViewModel."""
+
+    return cast(
+        AttendanceViewModel,
+        st.session_state[_ATTENDANCE_VIEWMODEL_KEY],
+    )
+
+
+def activity_viewmodel() -> ActivityViewModel:
+    """Return the shared ActivityViewModel."""
+
+    return cast(
+        ActivityViewModel,
+        st.session_state[_ACTIVITY_VIEWMODEL_KEY],
+    )
+
+
+def dashboard_viewmodel() -> DashboardViewModel:
+    """Return the shared DashboardViewModel."""
+
+    return cast(
+        DashboardViewModel,
+        st.session_state[_DASHBOARD_VIEWMODEL_KEY],
+    )
+
+
+def report_viewmodel() -> ReportViewModel:
+    """Return the shared ReportViewModel."""
+
+    return cast(
+        ReportViewModel,
+        st.session_state[_REPORT_VIEWMODEL_KEY],
+    )
+
+
+__all__ = [
+    "initialize",
+    "set_session_collection",
+    "current_session_collection",
+    "has_session_collection",
+    "clear_session_collection",
+    "grouping_service",
+    "grouping_configuration",
+    "set_grouping_configuration",
+    "grouped_sessions",
+    "set_selected_session",
+    "selected_session_date",
+    "current_session",
+    "has_selected_session",
+    "set_expected_attendees",
+    "expected_attendees",
+    "attendance_service",
+    "activity_service",
+    "dashboard_service",
+    "report_service",
+    "import_service",
+    "ai_service",
+    "ai_controller",
+    "ai_viewmodel",
+    "attendance_viewmodel",
+    "activity_viewmodel",
+    "dashboard_viewmodel",
+    "report_viewmodel",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\__init__.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\activity_viewmodel.py
+============================================================
+
+# src/presentation/viewmodels/activity_viewmodel.py
+
+"""
+Activity ViewModel
+
+Purpose
+-------
+Coordinates activity presentation workflows by consuming the
+Application Layer ActivityService and adapting activity data
+for Presentation Layer consumption.
+
+Responsibilities
+----------------
+- Delegate activity workflows to ActivityService.
+- Build Session aggregates through the Application Layer.
+- Expose presentation-ready activity data.
+- Adapt application results for existing presentation components.
+
+Architectural Rules
+-------------------
+- Presentation layer only.
+- No business logic.
+- No analytics calculations.
+- No Streamlit.
+- No direct Domain analytics.
+- No infrastructure dependencies.
+- No direct data parsing.
+
+Architecture
+------------
+Activity Page
+        |
+        v
+ActivityViewModel
+        |
+        v
+ActivityService
+        |
+        v
+Domain Activity Analytics
+        |
+        v
+Presentation Components
+
+The ViewModel is an adapter between the Application Layer
+and the Presentation Layer.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import date
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.services.activity_service import ActivityService
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Activity ViewModel
+# ============================================================================
+
+
+class ActivityViewModel:
+    """
+    Presentation ViewModel for activity workflows.
+
+    Coordinates the ActivityService and adapts activity
+    application data for Presentation Layer consumption.
+
+    The ViewModel does not calculate activity analytics.
+    Activity calculations remain delegated to the
+    Application and Domain layers.
+    """
+
+    def __init__(
+        self,
+        activity_service: ActivityService | None = None,
+    ) -> None:
+        """
+        Initialize the ActivityViewModel.
+
+        Parameters
+        ----------
+        activity_service:
+            Optional ActivityService dependency.
+
+            When omitted, a default ActivityService is created.
+        """
+
+        self._activity_service = (
+            activity_service if activity_service is not None else ActivityService()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
+
+    def build_session(
+        self,
+        *,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a Session through the Application Layer.
+
+        Session construction remains delegated to
+        ActivityService.
+        """
+
+        return self._activity_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+    # =========================================================================
+    # Activity Data
+    # =========================================================================
+
+    def get_activity(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, Any]:
+        """
+        Return activity data for the supplied Session.
+
+        Activity calculations are delegated to ActivityService.
+        The returned mapping is adapted for Presentation
+        Layer components.
+        """
+
+        return self.to_presentation_data(
+            session=session,
+        )
+
+    def to_presentation_data(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, Any]:
+        """
+        Adapt activity application results for Presentation components.
+
+        This method performs structural presentation adaptation only.
+
+        It does not:
+            - calculate activity analytics;
+            - apply business rules;
+            - parse messages;
+            - modify the Session aggregate.
+        """
+
+        return {
+            "activity_count": self._activity_service.activity_count(
+                session,
+            ),
+            "activity_types": self._activity_service.activity_counts(
+                session,
+            ),
+            "first_activity": self._activity_service.first_activity(
+                session,
+            ),
+            "last_activity": self._activity_service.last_activity(
+                session,
+            ),
+        }
+
+    # =========================================================================
+    # Activity Lookup
+    # =========================================================================
+
+    def activity_events(
+        self,
+        *,
+        session: Session,
+    ) -> tuple[Any, ...]:
+        """
+        Return activity events from the supplied Session.
+        """
+
+        return self._activity_service.activity_events(
+            session,
+        )
+
+    def activity_events_by_type(
+        self,
+        *,
+        session: Session,
+        activity_type: Any,
+    ) -> tuple[Any, ...]:
+        """
+        Return activity events matching the supplied activity type.
+
+        Activity type interpretation remains delegated to
+        ActivityService.
+        """
+
+        return self._activity_service.activity_events_by_type(
+            session,
+            activity_type,
+        )
+
+    # =========================================================================
+    # Presentation Workflow
+    # =========================================================================
+
+    def activity_data(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready activity data.
+
+        This is the primary convenience method for pages
+        and components consuming mapping-based activity data.
+
+        The workflow is:
+
+            Session
+                |
+                v
+            ActivityService
+                |
+                v
+            Presentation Mapping
+        """
+
+        return self.get_activity(
+            session=session,
+        )
+
+    # =========================================================================
+    # State
+    # =========================================================================
+
+    def has_activities(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when the Session contains activity events.
+        """
+
+        return self._activity_service.has_activities(
+            session,
+        )
+
+    def is_empty(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when the Session contains no events.
+        """
+
+        return self._activity_service.is_empty(
+            session,
+        )
+
+    # =========================================================================
+    # Service Access
+    # =========================================================================
+
+    @property
+    def activity_service(self) -> ActivityService:
+        """
+        Return the underlying ActivityService.
+        """
+
+        return self._activity_service
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(self) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"activity_service="
+            f"{self.activity_service.__class__.__name__})"
+        )
+
+    def __str__(self) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "ActivityViewModel",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\ai_viewmodel.py
+============================================================
+
+# src/presentation/viewmodels/ai_viewmodel.py
+
+"""
+AI ViewModel
+
+Purpose
+-------
+Transforms presentation data into AI-ready inputs and AI responses
+into presentation-ready models.
+
+Responsibilities
+----------------
+- Prepare prompt inputs.
+- Delegate AI generation to the AIController.
+- Return presentation-friendly models.
+
+Architectural Rules
+-------------------
+- Presentation layer only.
+- No business logic.
+- No analytics.
+- No provider communication.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from dataclasses import dataclass
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation.controllers.ai_controller import AIController
+
+# ============================================================================
+# View Models
+# ============================================================================
+
+
+@dataclass(slots=True, frozen=True)
+class AIResultViewModel:
+    """
+    Presentation model representing an AI response.
+    """
+
+    title: str
+    content: str
+    success: bool = True
+
+
+# ============================================================================
+# AI ViewModel
+# ============================================================================
+
+
+class AIViewModel:
+    """
+    Coordinates AI presentation workflows.
+    """
+
+    def __init__(
+        self,
+        controller: AIController,
+    ) -> None:
+        self._controller = controller
+
+    # =====================================================================
+    # Prompt Builders
+    # =====================================================================
+
+    def build_session_information(
+        self,
+        *,
+        session: Any,
+    ) -> str:
+        """
+        Build session information for AI prompts.
+        """
+
+        return (
+            f"Session Date: {session.session_date}\n"
+            f"Attendees: {session.attendee_count}\n"
+            f"Attendance Events: {session.attendance_count}\n"
+            f"Done Events: {session.done_count}\n"
+            f"Activity Events: {session.activity_count}"
+        )
+
+    def build_attendance_summary(
+        self,
+        *,
+        attendance: dict[str, Any],
+    ) -> str:
+        """
+        Build attendance summary text.
+        """
+
+        lines: list[str] = []
+
+        for key, value in attendance.items():
+            lines.append(f"{key}: {value}")
+
+        return "\n".join(lines)
+
+    def build_activity_summary(
+        self,
+        *,
+        activity: dict[str, Any],
+    ) -> str:
+        """
+        Build activity summary text.
+        """
+
+        lines: list[str] = []
+
+        for key, value in activity.items():
+            lines.append(f"{key}: {value}")
+
+        return "\n".join(lines)
+
+    def build_executive_report(
+        self,
+        *,
+        session: Any,
+        dashboard_summary: dict[str, Any],
+        attendance: dict[str, Any],
+        activity: dict[str, Any],
+    ) -> str:
+        """
+        Build a consolidated executive report.
+        """
+
+        sections = [
+            "SESSION INFORMATION",
+            self.build_session_information(
+                session=session,
+            ),
+            "",
+            "DASHBOARD SUMMARY",
+            str(dashboard_summary),
+            "",
+            "ATTENDANCE SUMMARY",
+            self.build_attendance_summary(
+                attendance=attendance,
+            ),
+            "",
+            "ACTIVITY SUMMARY",
+            self.build_activity_summary(
+                activity=activity,
+            ),
+        ]
+
+        return "\n".join(sections)
+
+    # =====================================================================
+    # AI Generation
+    # =====================================================================
+
+    def session_summary(
+        self,
+        *,
+        session_information: str,
+        attendance_summary: str,
+        activity_summary: str,
+    ) -> AIResultViewModel:
+        """
+        Generate a session summary.
+        """
+
+        content = self._controller.generate_session_summary(
+            session_information=session_information,
+            attendance_summary=attendance_summary,
+            activity_summary=activity_summary,
+        )
+
+        return AIResultViewModel(
+            title="Session Summary",
+            content=content,
+        )
+
+    def executive_summary(
+        self,
+        *,
+        report: str,
+    ) -> AIResultViewModel:
+        """
+        Generate an executive summary.
+        """
+
+        content = self._controller.generate_executive_summary(
+            report=report,
+        )
+
+        return AIResultViewModel(
+            title="Executive Summary",
+            content=content,
+        )
+
+    def scripture_summary(
+        self,
+        *,
+        scripture: str,
+    ) -> AIResultViewModel:
+        """
+        Generate a scripture summary.
+        """
+
+        content = self._controller.generate_scripture_summary(
+            scripture=scripture,
+        )
+
+        return AIResultViewModel(
+            title="Scripture Summary",
+            content=content,
+        )
+
+    def message_insights(
+        self,
+        *,
+        messages: str,
+    ) -> AIResultViewModel:
+        """
+        Generate message insights.
+        """
+
+        content = self._controller.generate_message_insights(
+            messages=messages,
+        )
+
+        return AIResultViewModel(
+            title="Message Insights",
+            content=content,
+        )
+
+    def trend_analysis(
+        self,
+        *,
+        metrics: str,
+    ) -> AIResultViewModel:
+        """
+        Generate a trend analysis.
+        """
+
+        content = self._controller.generate_trend_analysis(
+            metrics=metrics,
+        )
+
+        return AIResultViewModel(
+            title="Trend Analysis",
+            content=content,
+        )
+
+    def person_of_the_week(
+        self,
+        *,
+        metrics: str,
+    ) -> AIResultViewModel:
+        """
+        Generate a Person of the Week summary.
+        """
+
+        content = self._controller.generate_person_of_week(
+            metrics=metrics,
+        )
+
+        return AIResultViewModel(
+            title="Person of the Week",
+            content=content,
+        )
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "AIResultViewModel",
+    "AIViewModel",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\attendance_viewmodel.py
+============================================================
+
+# src/presentation/viewmodels/attendance_viewmodel.py
+
+"""
+Attendance ViewModel
+
+Purpose
+-------
+Coordinates attendance presentation workflows by consuming the
+Application Layer AttendanceService and adapting AttendanceResult
+for Presentation Layer consumption.
+
+Responsibilities
+----------------
+- Delegate attendance workflows to AttendanceService.
+- Consume the typed AttendanceResult application contract.
+- Expose presentation-friendly attendance data.
+- Adapt application results for existing presentation components.
+
+Architectural Rules
+-------------------
+- Presentation layer only.
+- No business logic.
+- No analytics calculations.
+- No Streamlit.
+- No direct Domain analytics.
+- No infrastructure dependencies.
+- No direct data parsing.
+
+Architecture
+------------
+Attendance Page
+        |
+        v
+AttendanceViewModel
+        |
+        v
+AttendanceService
+        |
+        v
+AttendanceResult
+        |
+        v
+Presentation Components
+
+The ViewModel is an adapter between the Application Layer
+contract and Presentation Layer consumption.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import date
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.dto.attendance_result import AttendanceResult
+from src.application.services.attendance_service import AttendanceService
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Attendance ViewModel
+# ============================================================================
+
+
+class AttendanceViewModel:
+    """
+    Presentation ViewModel for attendance workflows.
+
+    Coordinates the AttendanceService and adapts the resulting
+    AttendanceResult for Presentation Layer consumption.
+
+    The ViewModel does not calculate attendance. All attendance
+    calculations remain in the Application and Domain layers.
+    """
+
+    def __init__(
+        self,
+        attendance_service: AttendanceService | None = None,
+    ) -> None:
+        """
+        Initialize the AttendanceViewModel.
+
+        Parameters
+        ----------
+        attendance_service:
+            Optional AttendanceService dependency.
+
+            When omitted, a default AttendanceService is created.
+        """
+
+        self._attendance_service = (
+            attendance_service
+            if attendance_service is not None
+            else AttendanceService()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
+
+    def build_session(
+        self,
+        *,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a Session through the Application Layer.
+
+        Session construction remains delegated to the
+        AttendanceService.
+        """
+
+        return self._attendance_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+    # =========================================================================
+    # Attendance Result
+    # =========================================================================
+
+    def get_attendance(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> AttendanceResult:
+        """
+        Return the typed application attendance result.
+
+        The ViewModel delegates attendance result construction
+        to the AttendanceService.
+        """
+
+        return self._attendance_service.attendance_result(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+
+    # =========================================================================
+    # Presentation Adapter
+    # =========================================================================
+
+    def to_presentation_data(
+        self,
+        result: AttendanceResult,
+    ) -> dict[str, Any]:
+        """
+        Adapt AttendanceResult for Presentation components.
+
+        This method performs structural presentation adaptation only.
+
+        It does not:
+            - calculate attendance;
+            - calculate analytics;
+            - apply business rules;
+            - modify the application result.
+
+        The returned dictionary exists to support Presentation
+        components that currently consume mapping-based data.
+        """
+
+        return {
+            "attendees": result.attendees,
+            "participants": result.participants,
+            "attendance_count": result.attendance_count,
+            "attendance_rate": result.attendance_rate,
+            "attendance_types": result.attendance_types,
+            "attendance_events": result.attendance_events,
+            "done_events": result.done_events,
+            "done_count": result.done_count,
+            "first_done": result.first_done,
+        }
+
+    # =========================================================================
+    # Presentation Workflow
+    # =========================================================================
+
+    def attendance_data(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready attendance data.
+
+        This is the primary convenience method for pages that
+        currently consume mapping-based attendance data.
+
+        The workflow is:
+
+            Session
+                |
+                v
+            AttendanceService
+                |
+                v
+            AttendanceResult
+                |
+                v
+            Presentation Mapping
+        """
+
+        result = self.get_attendance(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+
+        return self.to_presentation_data(
+            result,
+        )
+
+    # =========================================================================
+    # Service Access
+    # =========================================================================
+
+    @property
+    def attendance_service(self) -> AttendanceService:
+        """
+        Return the underlying AttendanceService.
+        """
+
+        return self._attendance_service
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(self) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"attendance_service="
+            f"{self.attendance_service.__class__.__name__})"
+        )
+
+    def __str__(self) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "AttendanceViewModel",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\dashboard_viewmodel.py
+============================================================
+
+# src/presentation/viewmodels/dashboard_viewmodel.py
+
+"""
+Dashboard ViewModel
+
+Purpose
+-------
+Coordinates dashboard presentation workflows by consuming the
+Application Layer DashboardService and adapting dashboard data
+for Presentation Layer consumption.
+
+Responsibilities
+----------------
+- Delegate dashboard workflows to DashboardService.
+- Build Session aggregates through the Application Layer.
+- Expose presentation-ready dashboard data.
+- Adapt application results for existing presentation components.
+
+Architectural Rules
+-------------------
+- Presentation layer only.
+- No business logic.
+- No analytics calculations.
+- No Streamlit.
+- No direct Domain analytics.
+- No infrastructure dependencies.
+- No direct data parsing.
+
+Architecture
+------------
+Dashboard Page
+        |
+        v
+DashboardViewModel
+        |
+        v
+DashboardService
+        |
+        v
+AttendanceService + ActivityService
+        |
+        v
+Presentation Components
+
+The ViewModel is an adapter between the Application Layer
+and the Presentation Layer.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import date
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.services.dashboard_service import DashboardService
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Dashboard ViewModel
+# ============================================================================
+
+
+class DashboardViewModel:
+    """
+    Presentation ViewModel for dashboard workflows.
+
+    Coordinates the DashboardService and adapts dashboard
+    application data for Presentation Layer consumption.
+
+    The ViewModel does not calculate dashboard analytics.
+    All calculations remain delegated to the Application
+    and Domain layers.
+    """
+
+    def __init__(
+        self,
+        dashboard_service: DashboardService | None = None,
+    ) -> None:
+        """
+        Initialize the DashboardViewModel.
+
+        Parameters
+        ----------
+        dashboard_service:
+            Optional DashboardService dependency.
+
+            When omitted, a default DashboardService is created.
+        """
+
+        self._dashboard_service = (
+            dashboard_service if dashboard_service is not None else DashboardService()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
+
+    def build_session(
+        self,
+        *,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a Session through the Application Layer.
+
+        Session construction remains delegated to
+        DashboardService.
+        """
+
+        return self._dashboard_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+    # =========================================================================
+    # Dashboard Data
+    # =========================================================================
+
+    def get_dashboard(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Return complete dashboard data.
+
+        Dashboard calculations are delegated to
+        DashboardService.
+        """
+
+        return self.to_presentation_data(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+
+    def to_presentation_data(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Adapt dashboard application results for Presentation components.
+
+        This method performs structural presentation adaptation only.
+
+        It does not:
+            - calculate analytics;
+            - apply business rules;
+            - parse messages;
+            - modify the Session aggregate.
+        """
+
+        return {
+            "session": self._dashboard_service.session_summary(
+                session,
+            ),
+            "dashboard": self._dashboard_service.dashboard_summary(
+                session,
+                expected_attendees,
+            ),
+            "attendance": self._dashboard_service.attendance_summary(
+                session,
+                expected_attendees,
+            ),
+            "activity": self._dashboard_service.activity_summary(
+                session,
+            ),
+        }
+
+    # =========================================================================
+    # Individual Sections
+    # =========================================================================
+
+    def session_summary(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready session summary data.
+        """
+
+        return self._dashboard_service.session_summary(
+            session,
+        )
+
+    def dashboard_summary(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready dashboard summary data.
+        """
+
+        return self._dashboard_service.dashboard_summary(
+            session,
+            expected_attendees,
+        )
+
+    def attendance_summary(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready attendance summary data.
+        """
+
+        return self._dashboard_service.attendance_summary(
+            session,
+            expected_attendees,
+        )
+
+    def activity_summary(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready activity summary data.
+        """
+
+        return self._dashboard_service.activity_summary(
+            session,
+        )
+
+    # =========================================================================
+    # State
+    # =========================================================================
+
+    def has_attendance(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when attendance exists.
+        """
+
+        return self._dashboard_service.has_attendance(
+            session,
+        )
+
+    def has_activities(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when activities exist.
+        """
+
+        return self._dashboard_service.has_activities(
+            session,
+        )
+
+    def is_empty(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when the Session contains no events.
+        """
+
+        return self._dashboard_service.is_empty(
+            session,
+        )
+
+    # =========================================================================
+    # Service Access
+    # =========================================================================
+
+    @property
+    def dashboard_service(self) -> DashboardService:
+        """
+        Return the underlying DashboardService.
+        """
+
+        return self._dashboard_service
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(self) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"dashboard_service="
+            f"{self.dashboard_service.__class__.__name__})"
+        )
+
+    def __str__(self) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "DashboardViewModel",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\viewmodels\report_viewmodel.py
+============================================================
+
+# src/presentation/viewmodels/report_viewmodel.py
+
+"""
+Report ViewModel
+
+Purpose
+-------
+Coordinates report presentation workflows by consuming the
+Application Layer ReportService and adapting ReportResult
+for Presentation Layer consumption.
+
+Responsibilities
+----------------
+- Delegate report workflows to ReportService.
+- Consume the typed ReportResult application contract.
+- Expose presentation-ready report data.
+- Adapt application results for report presentation components.
+
+Architectural Rules
+-------------------
+- Presentation layer only.
+- No business logic.
+- No analytics calculations.
+- No Streamlit.
+- No PDF generation.
+- No Excel generation.
+- No file I/O.
+- No direct Domain analytics.
+- No infrastructure dependencies.
+- No direct data parsing.
+
+Architecture
+------------
+Reports Page
+        |
+        v
+ReportViewModel
+        |
+        v
+ReportService
+        |
+        v
+ReportResult
+        |
+        v
+Presentation Components
+
+The ViewModel is an adapter between the Application Layer
+contract and Presentation Layer consumption.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Iterable
+from datetime import date
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.application.dto.report_result import ReportResult
+from src.application.services.report_service import ReportService
+from src.domain.models.message import Message
+from src.domain.models.session import Session
+
+# ============================================================================
+# Report ViewModel
+# ============================================================================
+
+
+class ReportViewModel:
+    """
+    Presentation ViewModel for report workflows.
+
+    Coordinates the ReportService and adapts the resulting
+    ReportResult for Presentation Layer consumption.
+
+    The ViewModel does not calculate report analytics.
+    All calculations remain delegated to the Application
+    and Domain layers.
+    """
+
+    def __init__(
+        self,
+        report_service: ReportService | None = None,
+    ) -> None:
+        """
+        Initialize the ReportViewModel.
+
+        Parameters
+        ----------
+        report_service:
+            Optional ReportService dependency.
+
+            When omitted, a default ReportService is created.
+        """
+
+        self._report_service = (
+            report_service if report_service is not None else ReportService()
+        )
+
+    # =========================================================================
+    # Session Construction
+    # =========================================================================
+
+    def build_session(
+        self,
+        *,
+        session_date: date,
+        messages: Iterable[Message],
+    ) -> Session:
+        """
+        Build a Session through the Application Layer.
+
+        Session construction remains delegated to
+        ReportService.
+        """
+
+        return self._report_service.build_session(
+            session_date=session_date,
+            messages=messages,
+        )
+
+    # =========================================================================
+    # Report Result
+    # =========================================================================
+
+    def get_report(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> ReportResult:
+        """
+        Return the typed application report result.
+
+        The ViewModel delegates report construction
+        to the ReportService.
+        """
+
+        return self._report_service.report_data(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+
+    # =========================================================================
+    # Presentation Adapter
+    # =========================================================================
+
+    def to_presentation_data(
+        self,
+        result: ReportResult,
+    ) -> dict[str, Any]:
+        """
+        Adapt ReportResult for Presentation components.
+
+        This method performs structural presentation adaptation only.
+
+        It does not:
+            - calculate report analytics;
+            - apply business rules;
+            - generate files;
+            - modify the application result.
+        """
+
+        return result.to_dict()
+
+    # =========================================================================
+    # Presentation Workflow
+    # =========================================================================
+
+    def report_data(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, Any]:
+        """
+        Return presentation-ready report data.
+
+        The workflow is:
+
+            Session
+                |
+                v
+            ReportService
+                |
+                v
+            ReportResult
+                |
+                v
+            Presentation Mapping
+        """
+
+        result = self.get_report(
+            session=session,
+            expected_attendees=expected_attendees,
+        )
+
+        return self.to_presentation_data(
+            result,
+        )
+
+    # =========================================================================
+    # Individual Sections
+    # =========================================================================
+
+    def session_section(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, object]:
+        """
+        Return the session report section.
+        """
+
+        return self._report_service.session_section(
+            session,
+        )
+
+    def dashboard_section(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, object]:
+        """
+        Return the dashboard report section.
+        """
+
+        return self._report_service.dashboard_section(
+            session,
+            expected_attendees,
+        )
+
+    def attendance_section(
+        self,
+        *,
+        session: Session,
+        expected_attendees: int,
+    ) -> dict[str, object]:
+        """
+        Return the attendance report section.
+        """
+
+        return self._report_service.attendance_section(
+            session,
+            expected_attendees,
+        )
+
+    def activity_section(
+        self,
+        *,
+        session: Session,
+    ) -> dict[str, object]:
+        """
+        Return the activity report section.
+        """
+
+        return self._report_service.activity_section(
+            session,
+        )
+
+    # =========================================================================
+    # State
+    # =========================================================================
+
+    def has_attendance(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when attendance exists.
+        """
+
+        return self._report_service.has_attendance(
+            session,
+        )
+
+    def has_activities(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when activities exist.
+        """
+
+        return self._report_service.has_activities(
+            session,
+        )
+
+    def is_empty(
+        self,
+        *,
+        session: Session,
+    ) -> bool:
+        """
+        Return True when the Session contains no events.
+        """
+
+        return self._report_service.is_empty(
+            session,
+        )
+
+    # =========================================================================
+    # Service Access
+    # =========================================================================
+
+    @property
+    def report_service(self) -> ReportService:
+        """
+        Return the underlying ReportService.
+        """
+
+        return self._report_service
+
+    # =========================================================================
+    # Dunder Methods
+    # =========================================================================
+
+    def __repr__(self) -> str:
+        """
+        Return the official representation.
+        """
+
+        return (
+            f"{self.__class__.__name__}("
+            f"report_service="
+            f"{self.report_service.__class__.__name__})"
+        )
+
+    def __str__(self) -> str:
+        """
+        Return a readable representation.
+        """
+
+        return self.__repr__()
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "ReportViewModel",
+]
+
+============================================================
+FILE: src\application\dto\multi_session_analytics_result.py
+============================================================
+
+# src/application/dto/multi_session_analytics_result.py
+
+"""
+Multi-Session Analytics Result DTO
+
+Purpose
+-------
+Represent the application-layer analytics result produced when analytics are
+coordinated across multiple Daily Session aggregates.
+
+Architectural Responsibility
+----------------------------
+This DTO carries aggregated analytics from the Application layer to the
+Presentation layer.
+
+The DTO does not:
+
+- perform analytics;
+- contain business rules;
+- own Streamlit state;
+- perform Presentation-layer grouping.
+
+Daily Session remains the atomic Domain aggregate.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+
+@dataclass(frozen=True)
+class MultiSessionAnalyticsResult:
+    """
+    Immutable analytics result for multiple Daily Sessions.
+    """
+
+    session_count: int
+    start_date: date | None
+    end_date: date | None
+    total_participants: int
+    total_done_events: int
+    total_activity_events: int
+
+============================================================
+FILE: src\application\services\multi_session_analytics_service.py
+============================================================
+
+# src/application/services/multi_session_analytics_service.py
+
+"""
+Multi-Session Analytics Service
+
+Purpose
+-------
+Coordinate analytics across multiple Daily Session aggregates.
+
+Architectural Responsibility
+----------------------------
+The service receives a collection of Daily Sessions selected by the
+Presentation scope and coordinates analytics across them.
+
+The service does not:
+
+- perform Presentation-layer grouping;
+- own Streamlit state;
+- replace the Daily Session domain model;
+- move business rules into the Presentation layer.
+
+The architectural flow is:
+
+Selected SessionGroup
+        ?
+SessionGroup.sessions
+        ?
+MultiSessionAnalyticsService
+        ?
+MultiSessionAnalyticsResult
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import date
+
+from src.application.dto.multi_session_analytics_result import (
+    MultiSessionAnalyticsResult,
+)
+from src.domain.models.session import Session
+
+
+class MultiSessionAnalyticsService:
+    """
+    Application service for analytics across multiple Daily Sessions.
+
+    Daily Session remains the atomic Domain aggregate. This service provides
+    the application-level coordination boundary for a selected multi-session
+    Presentation scope.
+    """
+
+    def analyze(
+        self,
+        sessions: Iterable[Session],
+    ) -> MultiSessionAnalyticsResult:
+        """
+        Analyze a collection of Daily Sessions.
+
+        Parameters
+        ----------
+        sessions:
+            Iterable containing the Daily Sessions included in the selected
+            Presentation scope.
+
+        Returns
+        -------
+        MultiSessionAnalyticsResult
+            Typed application-layer analytics result.
+        """
+
+        session_list = tuple(sessions)
+
+        if not session_list:
+            return MultiSessionAnalyticsResult(
+                session_count=0,
+                start_date=None,
+                end_date=None,
+                total_participants=0,
+                total_done_events=0,
+                total_activity_events=0,
+            )
+
+        ordered_sessions = tuple(
+            sorted(
+                session_list,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        participants = {
+            attendance.attendee.casefold()
+            for session in ordered_sessions
+            for attendance in session.attendance_events
+        }
+
+        total_done_events = sum(
+            len(session.done_events) for session in ordered_sessions
+        )
+
+        total_activity_events = sum(
+            len(session.activity_events) for session in ordered_sessions
+        )
+
+        return MultiSessionAnalyticsResult(
+            session_count=len(ordered_sessions),
+            start_date=self._session_date(ordered_sessions[0]),
+            end_date=self._session_date(ordered_sessions[-1]),
+            total_participants=len(participants),
+            total_done_events=total_done_events,
+            total_activity_events=total_activity_events,
+        )
+
+    @staticmethod
+    def _session_date(session: Session) -> date:
+        """
+        Return the date associated with a Daily Session.
+        """
+
+        return session.session_date
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\__init__.py
+============================================================
+
+# src/presentation/components/common/__init__.py
+
+"""
+Common Presentation Components Package
+
+Purpose
+-------
+Provides reusable Streamlit presentation components.
+
+Responsibilities
+----------------
+- Expose reusable UI components.
+- Provide a clean import surface for presentation pages.
+
+Components
+-----------
+- charts
+- metric_cards
+- tables
+
+Rules
+-----
+- Presentation layer only.
+- No business logic.
+- No analytics calculations.
+- No domain dependencies.
+"""
+
+from __future__ import annotations
+
+from . import charts, metric_cards, tables
+
+__all__ = [
+    "charts",
+    "metric_cards",
+    "tables",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\aam_cards.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\badges.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\charts.py
+============================================================
+
+# src/presentation/components/charts.py
+
+"""
+Chart Components
+
+Purpose
+-------
+Reusable Plotly chart components for the Presentation layer.
+
+Responsibilities
+----------------
+- Render bar charts.
+- Render line charts.
+- Render pie charts.
+- Display consistent empty chart states.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics.
+- No Application Services.
+- No Domain dependencies.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# ============================================================================
+# Bar Chart
+# ============================================================================
+
+
+def render_bar_chart(
+    dataframe: pd.DataFrame,
+    *,
+    x: str,
+    y: str,
+    title: str,
+) -> None:
+    """
+    Render a responsive bar chart.
+    """
+
+    if dataframe.empty:
+        render_empty_chart()
+        return
+
+    figure = px.bar(
+        dataframe,
+        x=x,
+        y=y,
+        title=title,
+    )
+
+    figure.update_layout(
+        margin=dict(
+            l=20,
+            r=20,
+            t=50,
+            b=20,
+        ),
+    )
+
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+    )
+
+
+# ============================================================================
+# Line Chart
+# ============================================================================
+
+
+def render_line_chart(
+    dataframe: pd.DataFrame,
+    *,
+    x: str,
+    y: str,
+    title: str,
+) -> None:
+    """
+    Render a responsive line chart.
+    """
+
+    if dataframe.empty:
+        render_empty_chart()
+        return
+
+    figure = px.line(
+        dataframe,
+        x=x,
+        y=y,
+        title=title,
+    )
+
+    figure.update_layout(
+        margin=dict(
+            l=20,
+            r=20,
+            t=50,
+            b=20,
+        ),
+    )
+
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+    )
+
+
+# ============================================================================
+# Pie Chart
+# ============================================================================
+
+
+def render_pie_chart(
+    dataframe: pd.DataFrame,
+    *,
+    names: str,
+    values: str,
+    title: str,
+) -> None:
+    """
+    Render a responsive pie chart.
+    """
+
+    if dataframe.empty:
+        render_empty_chart()
+        return
+
+    figure = px.pie(
+        dataframe,
+        names=names,
+        values=values,
+        title=title,
+    )
+
+    figure.update_layout(
+        margin=dict(
+            l=20,
+            r=20,
+            t=50,
+            b=20,
+        ),
+    )
+
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+    )
+
+
+# ============================================================================
+# Empty State
+# ============================================================================
+
+
+def render_empty_chart(
+    message: str = "No chart data available.",
+) -> None:
+    """
+    Display an empty chart placeholder.
+    """
+
+    st.info(message)
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\filters.py
+============================================================
+
+# src/presentation/components/filters.py
+
+"""
+Filter Components
+
+Purpose
+-------
+Reusable filter widgets for the Presentation layer.
+
+Responsibilities
+----------------
+- Render reusable input controls.
+- Collect user selections.
+- Return selected values.
+- Remain presentation-only.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No Application Services.
+- No Domain dependencies.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Sequence
+from datetime import date
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Select Box
+# ============================================================================
+
+
+def render_selectbox(
+    *,
+    label: str,
+    options: Sequence[str],
+    index: int = 0,
+    help_text: str | None = None,
+) -> str:
+    """
+    Render a reusable select box.
+    """
+
+    return st.selectbox(
+        label,
+        options,
+        index=index,
+        help=help_text,
+    )
+
+
+# ============================================================================
+# Date Input
+# ============================================================================
+
+
+def render_date_input(
+    *,
+    label: str,
+    value: date | None = None,
+) -> date | None:
+    """
+    Render a date picker.
+
+    Returns
+    -------
+    date | None
+        The selected date, or None when no date has been chosen.
+    """
+
+    return st.date_input(
+        label,
+        value=value,
+    )
+
+
+# ============================================================================
+# Number Input
+# ============================================================================
+
+
+def render_number_input(
+    *,
+    label: str,
+    value: int = 0,
+    minimum: int = 0,
+    maximum: int = 1000,
+) -> int:
+    """
+    Render an integer number input.
+    """
+
+    return st.number_input(
+        label,
+        min_value=minimum,
+        max_value=maximum,
+        value=value,
+        step=1,
+    )
+
+
+# ============================================================================
+# Checkbox
+# ============================================================================
+
+
+def render_checkbox(
+    *,
+    label: str,
+    value: bool = False,
+) -> bool:
+    """
+    Render a checkbox.
+    """
+
+    return st.checkbox(
+        label,
+        value=value,
+    )
+
+
+# ============================================================================
+# Divider
+# ============================================================================
+
+
+def render_divider() -> None:
+    """
+    Render a visual divider.
+    """
+
+    st.divider()
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "render_selectbox",
+    "render_date_input",
+    "render_number_input",
+    "render_checkbox",
+    "render_divider",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\metric_cards.py
+============================================================
+
+# src/presentation/components/common/metric_cards.py
+
+"""
+Metric Card Components
+
+Purpose
+-------
+Reusable Streamlit metric card components for displaying
+key performance indicators throughout the application.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics.
+- No Session objects.
+- No Application Services.
+- No Infrastructure access.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Sequence
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Type Aliases
+# ============================================================================
+
+MetricValue = int | float | str
+
+Metric = tuple[
+    str,
+    MetricValue,
+    str | None,
+    str | None,
+]
+
+# ============================================================================
+# Single Metric
+# ============================================================================
+
+
+def render_metric(
+    *,
+    label: str,
+    value: MetricValue,
+    delta: str | None = None,
+    help_text: str | None = None,
+) -> None:
+    """
+    Render a single Streamlit metric card.
+    """
+
+    st.metric(
+        label=label,
+        value=value,
+        delta=delta,
+        help=help_text,
+    )
+
+
+# ============================================================================
+# Metric Row
+# ============================================================================
+
+
+def render_metric_row(
+    metrics: Sequence[Metric],
+) -> None:
+    """
+    Render multiple metrics in a responsive row.
+    """
+
+    if not metrics:
+
+        st.info(
+            "No metrics available.",
+        )
+
+        return
+
+    columns = st.columns(
+        len(metrics),
+    )
+
+    for column, metric in zip(
+        columns,
+        metrics,
+        strict=False,
+    ):
+
+        label, value, delta, help_text = metric
+
+        with column:
+
+            render_metric(
+                label=label,
+                value=value,
+                delta=delta,
+                help_text=help_text,
+            )
+
+
+# ============================================================================
+# Section Header
+# ============================================================================
+
+
+def render_section_header(
+    title: str,
+    description: str | None = None,
+) -> None:
+    """
+    Render a section heading above a metric group.
+    """
+
+    st.subheader(
+        title,
+    )
+
+    if description:
+
+        st.caption(
+            description,
+        )
+
+
+# ============================================================================
+# Empty State
+# ============================================================================
+
+
+def render_empty_metrics(
+    message: str = "No metrics available.",
+) -> None:
+    """
+    Display an empty metric state.
+    """
+
+    st.info(
+        message,
+    )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\session_selector.py
+============================================================
+
+# src/presentation/components/common/session_selector.py
+
+"""
+Hierarchical Session Selector
+
+Presentation flow
+-----------------
+Presentation Scope
+        ↓
+Session Group
+        ↓
+Selected Daily Session
+
+Responsibilities
+----------------
+- Render the unified Presentation Scope selector.
+- Apply the selected GroupingConfiguration through the Presentation Context.
+- Render the Session Group selector.
+- Resolve the selected Daily Session from the selected Session Group.
+- Persist the selected Daily Session through the Presentation Context.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No parsing.
+- No Infrastructure access.
+- No direct grouping strategy construction.
+
+The Presentation Context owns grouping configuration and
+SessionGroupingService composition.
+
+Session Selection Design
+------------------------
+The user selects:
+
+1. Presentation Scope.
+2. Session Group.
+
+The Daily Session is resolved automatically.
+
+There is intentionally no separate Daily Session selector.
+
+The selected Daily Session remains stable when possible.
+
+When the current Daily Session is not contained in the
+newly selected Session Group, the first Daily Session in
+that group becomes selected.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Sequence
+from datetime import date
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.domain.models.session import Session
+from src.presentation import context
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.models.session_group import SessionGroup
+
+# ============================================================================
+# Constants
+# ============================================================================
+
+SCOPE_SELECTOR_KEY = "presentation_scope_selector"
+
+GROUP_SELECTOR_KEY = "session_group_selector"
+
+# ============================================================================
+# Presentation Scope Labels
+# ============================================================================
+
+_SCOPE_LABELS: dict[GroupingPeriod, str] = {
+    GroupingPeriod.DAY: "Daily",
+    GroupingPeriod.WEEK: "Weekly",
+    GroupingPeriod.MONTH: "Monthly",
+    GroupingPeriod.FIRST_HALF: "First Half of Year",
+    GroupingPeriod.SECOND_HALF: "Last Half of Year",
+    GroupingPeriod.YEAR: "Yearly",
+}
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _group_label(
+    group: SessionGroup,
+) -> str:
+    """
+    Return a readable label for a SessionGroup.
+    """
+
+    return f"{group.start_date} – " f"{group.end_date}"
+
+
+def _scope_options() -> tuple[GroupingPeriod, ...]:
+    """
+    Return supported Presentation Scope options.
+    """
+
+    return tuple(
+        _SCOPE_LABELS,
+    )
+
+
+def _scope_label(
+    period: GroupingPeriod,
+) -> str:
+    """
+    Return the display label for a grouping period.
+    """
+
+    return _SCOPE_LABELS[period]
+
+
+def _current_scope_index(
+    options: Sequence[GroupingPeriod],
+) -> int:
+    """
+    Return the index of the currently configured grouping period.
+    """
+
+    current_period = context.grouping_configuration().period
+
+    if current_period in options:
+
+        return options.index(
+            current_period,
+        )
+
+    return 0
+
+
+def _apply_scope_selection(
+    selected_period: GroupingPeriod,
+) -> bool:
+    """
+    Apply the selected Presentation Scope.
+
+    Returns
+    -------
+    bool
+        True when the grouping configuration changed.
+    """
+
+    current_configuration = context.grouping_configuration()
+
+    if current_configuration.period is selected_period:
+
+        return False
+
+    context.set_grouping_configuration(
+        GroupingConfiguration(
+            period=selected_period,
+            week_start_day=(current_configuration.week_start_day),
+        ),
+    )
+
+    return True
+
+
+def _current_group_index(
+    groups: Sequence[SessionGroup],
+    current_date: date | None,
+) -> int:
+    """
+    Return the index of the group containing the current session.
+    """
+
+    if current_date is None:
+
+        return 0
+
+    for index, group in enumerate(groups):
+
+        if (
+            group.get_session(
+                current_date,
+            )
+            is not None
+        ):
+
+            return index
+
+    return 0
+
+
+def _select_group(
+    groups: tuple[SessionGroup, ...],
+    current_date: date | None,
+) -> SessionGroup:
+    """
+    Render the Session Group selector.
+    """
+
+    group_labels = [
+        _group_label(
+            group,
+        )
+        for group in groups
+    ]
+
+    selected_group_index = _current_group_index(
+        groups=groups,
+        current_date=current_date,
+    )
+
+    selected_group_label = st.selectbox(
+        "Select Session Group",
+        options=group_labels,
+        index=selected_group_index,
+        key=GROUP_SELECTOR_KEY,
+        help=(
+            "Select the presentation group containing " "the Daily Session to analyse."
+        ),
+    )
+
+    return groups[
+        group_labels.index(
+            selected_group_label,
+        )
+    ]
+
+
+def _resolve_selected_session(
+    group: SessionGroup,
+    current_date: date | None,
+) -> Session | None:
+    """
+    Resolve the selected Daily Session from a SessionGroup.
+    """
+
+    if current_date is not None:
+
+        current_session = group.get_session(
+            current_date,
+        )
+
+        if current_session is not None:
+
+            selected_date = current_session.session_date
+
+        else:
+
+            selected_date = group.session_dates[0]
+
+    else:
+
+        if not group.session_dates:
+
+            return None
+
+        selected_date = group.session_dates[0]
+
+    if context.selected_session_date() != selected_date:
+
+        context.set_selected_session(
+            selected_date,
+        )
+
+    return context.current_session()
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+
+
+def render() -> Session | None:
+    """
+    Render hierarchical Session selection.
+
+    The user selects:
+
+    1. Presentation Scope.
+    2. Session Group.
+
+    The Daily Session is resolved automatically.
+    """
+
+    session_collection = context.current_session_collection()
+
+    if session_collection is None:
+
+        return None
+
+    if session_collection.is_empty:
+
+        return None
+
+    scope_options = _scope_options()
+
+    selected_period = st.selectbox(
+        "Presentation Scope",
+        options=scope_options,
+        index=_current_scope_index(
+            scope_options,
+        ),
+        format_func=_scope_label,
+        key=SCOPE_SELECTOR_KEY,
+        help=(
+            "Choose how Daily Sessions are grouped " "for presentation and navigation."
+        ),
+    )
+
+    scope_changed = _apply_scope_selection(
+        selected_period,
+    )
+
+    groups = tuple(
+        context.grouped_sessions(),
+    )
+
+    if not groups:
+
+        return None
+
+    current_session = context.current_session()
+
+    current_date = current_session.session_date if current_session is not None else None
+
+    if scope_changed:
+
+        st.session_state.pop(
+            GROUP_SELECTOR_KEY,
+            None,
+        )
+
+        current_date = context.selected_session_date()
+
+    selected_group = _select_group(
+        groups=groups,
+        current_date=current_date,
+    )
+
+    return _resolve_selected_session(
+        group=selected_group,
+        current_date=current_date,
+    )
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    "render",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\sidebar.py
+============================================================
+
+# src/presentation/components/sidebar.py
+
+"""
+Sidebar Components
+
+Purpose
+-------
+Reusable sidebar components for the Presentation layer.
+
+Responsibilities
+----------------
+- Render application information.
+- Render session information.
+- Display quick actions.
+- Remain presentation-only.
+
+Architectural Rules
+-------------------
+- No business logic.
+- No analytics.
+- No Application Services.
+- No Domain dependencies.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import streamlit as st
+
+# ============================================================================
+# Sidebar Title
+# ============================================================================
+
+
+def render_title(
+    title: str,
+) -> None:
+    """
+    Render the sidebar title.
+    """
+
+    st.sidebar.title(title)
+
+
+# ============================================================================
+# Sidebar Section
+# ============================================================================
+
+
+def render_section(
+    heading: str,
+) -> None:
+    """
+    Render a sidebar section heading.
+    """
+
+    st.sidebar.subheader(heading)
+
+
+# ============================================================================
+# Sidebar Text
+# ============================================================================
+
+
+def render_text(
+    text: str,
+) -> None:
+    """
+    Render sidebar text.
+    """
+
+    st.sidebar.write(text)
+
+
+# ============================================================================
+# Sidebar Success
+# ============================================================================
+
+
+def render_success(
+    message: str,
+) -> None:
+    """
+    Render a success message.
+    """
+
+    st.sidebar.success(message)
+
+
+# ============================================================================
+# Sidebar Warning
+# ============================================================================
+
+
+def render_warning(
+    message: str,
+) -> None:
+    """
+    Render a warning message.
+    """
+
+    st.sidebar.warning(message)
+
+
+# ============================================================================
+# Sidebar Info
+# ============================================================================
+
+
+def render_info(
+    message: str,
+) -> None:
+    """
+    Render an informational message.
+    """
+
+    st.sidebar.info(message)
+
+
+# ============================================================================
+# Sidebar Divider
+# ============================================================================
+
+
+def render_divider() -> None:
+    """
+    Render a sidebar divider.
+    """
+
+    st.sidebar.divider()
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\common\tables.py
+============================================================
+
+# src/presentation/components/tables.py
+
+"""
+Table Components
+
+Purpose
+-------
+Reusable Streamlit table components.
+
+Responsibilities
+----------------
+- Render DataFrames.
+- Render tabular records.
+- Display consistent empty states.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics.
+- No Application Services.
+- No Domain dependencies.
+
+Author
+------
+OYBS Attendance Dashboard
+
+Created
+-------
+July 2026
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+# ============================================================================
+# Third-Party Imports
+# ============================================================================
+import pandas as pd
+import streamlit as st
+
+# ============================================================================
+# DataFrame
+# ============================================================================
+
+
+def render_dataframe(
+    dataframe: pd.DataFrame,
+    *,
+    use_container_width: bool = True,
+    hide_index: bool = True,
+) -> None:
+    """
+    Render a pandas DataFrame.
+    """
+
+    if dataframe.empty:
+        render_empty_table()
+        return
+
+    st.dataframe(
+        dataframe,
+        use_container_width=use_container_width,
+        hide_index=hide_index,
+    )
+
+
+# ============================================================================
+# Records
+# ============================================================================
+
+
+def render_table(
+    records: Sequence[Mapping[str, Any]],
+) -> None:
+    """
+    Render tabular records.
+
+    Parameters
+    ----------
+    records:
+        Sequence of dictionaries.
+    """
+
+    if not records:
+        render_empty_table()
+        return
+
+    dataframe = pd.DataFrame(records)
+
+    render_dataframe(dataframe)
+
+
+# ============================================================================
+# Empty State
+# ============================================================================
+
+
+def render_empty_table(
+    message: str = "No data available.",
+) -> None:
+    """
+    Display an empty table message.
+    """
+
+    st.info(message)
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\__init__.py
+============================================================
+
+"""
+Attendance Presentation Components
+
+Purpose
+-------
+Provides reusable presentation components for the Attendance Analytics
+workspace.
+
+Responsibilities
+----------------
+- Organize attendance-specific presentation components.
+- Expose a clean package API.
+- Keep attendance rendering logic out of page modules.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+"""
+
+from __future__ import annotations
+
+from . import distribution, overview
+
+__all__ = [
+    "distribution",
+    "overview",
+]
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\distribution.py
+============================================================
+
+# src/presentation/components/attendance/distribution.py
+
+"""
+Attendance Distribution Component
+
+Purpose
+-------
+Renders the attendance distribution section for the Attendance Analytics
+workspace.
+
+Responsibilities
+----------------
+- Display attendance distribution chart.
+- Display attendance distribution table.
+- Delegate formatting to presentation utilities.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from collections import Counter
+from typing import Any, cast
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation.components.common import (
+    charts,
+    metric_cards,
+    tables,
+)
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Attendance Distribution
+# ============================================================================
+
+
+def render(
+    attendance: dict[str, Any],
+) -> None:
+    """
+    Render the attendance distribution section.
+
+    Parameters
+    ----------
+    attendance:
+        Attendance summary generated by the application layer.
+    """
+
+    metric_cards.render_section_header(
+        "Attendance Distribution",
+        "Attendance classification breakdown.",
+    )
+
+    attendance_counts = cast(
+        Counter[Any],
+        attendance["attendance_types"],
+    )
+
+    attendance_dataframe = formatters.counter_to_dataframe(
+        attendance_counts,
+    )
+
+    charts.render_bar_chart(
+        attendance_dataframe,
+        x="Category",
+        y="Count",
+        title="Attendance Distribution",
+    )
+
+    tables.render_dataframe(
+        attendance_dataframe,
+    )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\missing_members.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\overview.py
+============================================================
+
+# src/presentation/components/attendance/overview.py
+
+"""
+Attendance Overview Component
+
+Purpose
+-------
+Renders the attendance overview section for the Attendance Analytics
+workspace.
+
+Responsibilities
+----------------
+- Display attendance KPI cards.
+- Delegate metric formatting to presentation utilities.
+- Render presentation components only.
+
+Architectural Rules
+-------------------
+- Presentation only.
+- No business logic.
+- No analytics calculations.
+"""
+
+from __future__ import annotations
+
+# ============================================================================
+# Standard Library Imports
+# ============================================================================
+from typing import Any
+
+# ============================================================================
+# Local Imports
+# ============================================================================
+from src.presentation.components.common import metric_cards
+from src.presentation.utils import formatters
+
+# ============================================================================
+# Attendance Overview
+# ============================================================================
+
+
+def render(
+    attendance: dict[str, Any],
+) -> None:
+    """
+    Render the attendance overview section.
+
+    Parameters
+    ----------
+    attendance:
+        Attendance summary generated by the application layer.
+    """
+
+    metric_cards.render_section_header(
+        "Attendance Overview",
+        "Attendance statistics for the current session.",
+    )
+
+    metric_cards.render_metric_row(
+        formatters.attendance_metrics(
+            attendance,
+        ),
+    )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\rankings.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\attendance\trend.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\distribution.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\engagement.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\export_panel.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\filters.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\overview.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\rankings.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\src\presentation\components\activity\timeline.py
+============================================================
+
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_daily_grouping_strategy.py
+============================================================
+
+# tests/presentation/grouping/test_daily_grouping_strategy.py
+
+from datetime import date
+
+from src.presentation.grouping.daily_grouping_strategy import (
+    DailyGroupingStrategy,
+)
+
+
+def test_daily_grouping_boundary_contains_only_the_session_date() -> None:
+    strategy = DailyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 15),
+    )
+
+    assert boundary.start_date == date(2023, 1, 15)
+    assert boundary.end_date == date(2023, 1, 15)
+
+
+def test_daily_grouping_works_at_start_of_year() -> None:
+    strategy = DailyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 1),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 1, 1)
+
+
+def test_daily_grouping_works_at_end_of_year() -> None:
+    strategy = DailyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 12, 31),
+    )
+
+    assert boundary.start_date == date(2023, 12, 31)
+    assert boundary.end_date == date(2023, 12, 31)
+
+
+def test_daily_grouping_handles_leap_day() -> None:
+    strategy = DailyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2024, 2, 29),
+    )
+
+    assert boundary.start_date == date(2024, 2, 29)
+    assert boundary.end_date == date(2024, 2, 29)
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_grouping_configuration.py
+============================================================
+
+# tests/presentation/grouping/test_grouping_configuration.py
+
+import pytest
+
+from src.presentation.grouping.grouping_configuration import (
+    GroupingConfiguration,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+
+
+def test_default_configuration_is_weekly_sunday_to_saturday() -> None:
+    configuration = GroupingConfiguration()
+
+    assert configuration.period is GroupingPeriod.WEEK
+    assert configuration.week_start_day == 6
+
+
+def test_daily_factory_creates_daily_configuration() -> None:
+    configuration = GroupingConfiguration.daily()
+
+    assert configuration.period is GroupingPeriod.DAY
+
+
+def test_weekly_factory_creates_weekly_configuration() -> None:
+    configuration = GroupingConfiguration.weekly()
+
+    assert configuration.period is GroupingPeriod.WEEK
+    assert configuration.week_start_day == 6
+
+
+def test_monthly_factory_creates_monthly_configuration() -> None:
+    configuration = GroupingConfiguration.monthly()
+
+    assert configuration.period is GroupingPeriod.MONTH
+
+
+def test_first_half_factory_creates_first_half_configuration() -> None:
+    configuration = GroupingConfiguration.first_half()
+
+    assert configuration.period is GroupingPeriod.FIRST_HALF
+
+
+def test_second_half_factory_creates_second_half_configuration() -> None:
+    configuration = GroupingConfiguration.second_half()
+
+    assert configuration.period is GroupingPeriod.SECOND_HALF
+
+
+def test_yearly_factory_creates_yearly_configuration() -> None:
+    configuration = GroupingConfiguration.yearly()
+
+    assert configuration.period is GroupingPeriod.YEAR
+
+
+def test_invalid_week_start_day_raises_error() -> None:
+    with pytest.raises(ValueError):
+        GroupingConfiguration(
+            week_start_day=7,
+        )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_grouping_types.py
+============================================================
+
+# tests/presentation/grouping/test_grouping_types.py
+
+from src.presentation.grouping.grouping_types import GroupingPeriod
+
+
+def test_grouping_period_contains_supported_periods() -> None:
+    assert GroupingPeriod.DAY.value == "day"
+    assert GroupingPeriod.WEEK.value == "week"
+    assert GroupingPeriod.MONTH.value == "month"
+    assert GroupingPeriod.FIRST_HALF.value == "first_half"
+    assert GroupingPeriod.SECOND_HALF.value == "second_half"
+    assert GroupingPeriod.YEAR.value == "year"
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_period_grouping_strategy.py
+============================================================
+
+# tests/presentation/grouping/test_period_grouping_strategy.py
+
+from datetime import date
+
+import pytest
+
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.grouping.period_grouping_strategy import (
+    PeriodGroupingStrategy,
+)
+
+
+def test_week_period_returns_week_boundary() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.WEEK,
+    )
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 4),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 1, 7)
+
+
+def test_month_period_returns_month_boundary() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.MONTH,
+    )
+
+    boundary = strategy.boundary_for(
+        date(2023, 2, 15),
+    )
+
+    assert boundary.start_date == date(2023, 2, 1)
+    assert boundary.end_date == date(2023, 2, 28)
+
+
+def test_first_half_period_returns_first_half_boundary() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.FIRST_HALF,
+    )
+
+    boundary = strategy.boundary_for(
+        date(2023, 3, 15),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 6, 30)
+
+
+def test_second_half_period_returns_second_half_boundary() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.SECOND_HALF,
+    )
+
+    boundary = strategy.boundary_for(
+        date(2023, 9, 15),
+    )
+
+    assert boundary.start_date == date(2023, 7, 1)
+    assert boundary.end_date == date(2023, 12, 31)
+
+
+def test_year_period_returns_year_boundary() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.YEAR,
+    )
+
+    boundary = strategy.boundary_for(
+        date(2023, 7, 15),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 12, 31)
+
+
+def test_period_is_exposed() -> None:
+    strategy = PeriodGroupingStrategy(
+        GroupingPeriod.MONTH,
+    )
+
+    assert strategy.period is GroupingPeriod.MONTH
+
+
+def test_day_period_is_not_yet_supported() -> None:
+    with pytest.raises(ValueError):
+        PeriodGroupingStrategy(
+            GroupingPeriod.DAY,
+        )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_session_group.py
+============================================================
+
+# tests/presentation/grouping/test_session_group.py
+
+from datetime import date
+
+from src.domain.models.session import Session
+from src.presentation.models.session_group import SessionGroup
+
+
+def test_session_group_sorts_sessions_chronologically() -> None:
+    sessions = (
+        Session(
+            session_date=date(2023, 1, 5),
+        ),
+        Session(
+            session_date=date(2023, 1, 1),
+        ),
+    )
+
+    group = SessionGroup(
+        start_date=date(2023, 1, 1),
+        end_date=date(2023, 1, 7),
+        sessions=sessions,
+    )
+
+    assert group.session_dates == (
+        date(2023, 1, 1),
+        date(2023, 1, 5),
+    )
+
+
+def test_session_group_returns_session_by_date() -> None:
+    session = Session(
+        session_date=date(2023, 1, 3),
+    )
+
+    group = SessionGroup(
+        start_date=date(2023, 1, 1),
+        end_date=date(2023, 1, 7),
+        sessions=(session,),
+    )
+
+    assert group.get_session(
+        date(2023, 1, 3),
+    ) is session
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_session_grouping_service.py
+============================================================
+
+# tests/presentation/grouping/test_session_grouping_service.py
+
+from datetime import date
+
+from src.domain.models.session import Session
+from src.domain.models.session_collection import SessionCollection
+from src.presentation.grouping.first_half_grouping_strategy import (
+    FirstHalfGroupingStrategy,
+)
+from src.presentation.grouping.grouping_types import GroupingPeriod
+from src.presentation.grouping.period_grouping_strategy import (
+    PeriodGroupingStrategy,
+)
+from src.presentation.grouping.second_half_grouping_strategy import (
+    SecondHalfGroupingStrategy,
+)
+from src.presentation.grouping.session_grouping_service import (
+    SessionGroupingService,
+)
+from src.presentation.grouping.weekly_grouping_strategy import (
+    WeeklyGroupingStrategy,
+)
+
+
+def test_session_collection_is_grouped_by_week() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 10),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 1, 3),
+            ),
+            Session(
+                session_date=date(2023, 1, 8),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=WeeklyGroupingStrategy(),
+        period=GroupingPeriod.WEEK,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 1, 7)
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 1, 3),
+    )
+
+    assert groups[1].start_date == date(2023, 1, 8)
+    assert groups[1].end_date == date(2023, 1, 14)
+    assert groups[1].session_dates == (
+        date(2023, 1, 8),
+        date(2023, 1, 10),
+    )
+
+
+def test_grouping_does_not_mutate_session_collection() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 3),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+        ),
+    )
+
+    original_dates = session_collection.session_dates
+
+    service = SessionGroupingService(
+        strategy=WeeklyGroupingStrategy(),
+        period=GroupingPeriod.WEEK,
+    )
+
+    service.group(
+        session_collection,
+    )
+
+    assert session_collection.session_dates == original_dates
+
+
+def test_session_collection_is_grouped_by_month() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 31),
+            ),
+            Session(
+                session_date=date(2023, 2, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.MONTH,
+        ),
+        period=GroupingPeriod.MONTH,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 1, 31)
+
+    assert groups[1].start_date == date(2023, 2, 1)
+    assert groups[1].end_date == date(2023, 2, 28)
+
+
+def test_session_collection_is_grouped_by_first_half() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 6, 30),
+            ),
+            Session(
+                session_date=date(2024, 1, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.FIRST_HALF,
+        ),
+        period=GroupingPeriod.FIRST_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 1, 1)
+    assert groups[0].end_date == date(2023, 6, 30)
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 6, 30),
+    )
+
+    assert groups[1].start_date == date(2024, 1, 1)
+    assert groups[1].end_date == date(2024, 6, 30)
+    assert groups[1].session_dates == (
+        date(2024, 1, 1),
+    )
+
+
+def test_session_collection_is_grouped_by_second_half() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 7, 1),
+            ),
+            Session(
+                session_date=date(2023, 12, 31),
+            ),
+            Session(
+                session_date=date(2024, 7, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.SECOND_HALF,
+        ),
+        period=GroupingPeriod.SECOND_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2023, 7, 1)
+    assert groups[0].end_date == date(2023, 12, 31)
+    assert groups[0].session_dates == (
+        date(2023, 7, 1),
+        date(2023, 12, 31),
+    )
+
+    assert groups[1].start_date == date(2024, 7, 1)
+    assert groups[1].end_date == date(2024, 12, 31)
+    assert groups[1].session_dates == (
+        date(2024, 7, 1),
+    )
+
+
+def test_session_collection_is_grouped_by_year() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2022, 12, 31),
+            ),
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=PeriodGroupingStrategy(
+            period=GroupingPeriod.YEAR,
+        ),
+        period=GroupingPeriod.YEAR,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 2
+
+    assert groups[0].start_date == date(2022, 1, 1)
+    assert groups[0].end_date == date(2022, 12, 31)
+
+    assert groups[1].start_date == date(2023, 1, 1)
+    assert groups[1].end_date == date(2023, 12, 31)
+
+
+def test_direct_first_half_strategy_groups_first_half_dates() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 1, 1),
+            ),
+            Session(
+                session_date=date(2023, 6, 30),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=FirstHalfGroupingStrategy(),
+        period=GroupingPeriod.FIRST_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 1
+
+    assert groups[0].session_dates == (
+        date(2023, 1, 1),
+        date(2023, 6, 30),
+    )
+
+
+def test_direct_second_half_strategy_groups_second_half_dates() -> None:
+    session_collection = SessionCollection(
+        sessions=(
+            Session(
+                session_date=date(2023, 7, 1),
+            ),
+            Session(
+                session_date=date(2023, 12, 31),
+            ),
+        ),
+    )
+
+    service = SessionGroupingService(
+        strategy=SecondHalfGroupingStrategy(),
+        period=GroupingPeriod.SECOND_HALF,
+    )
+
+    groups = service.group(
+        session_collection,
+    )
+
+    assert len(groups) == 1
+
+    assert groups[0].session_dates == (
+        date(2023, 7, 1),
+        date(2023, 12, 31),
+    )
+
+============================================================
+FILE: C:\Users\HP\OneDrive\Desktop\MeApp\oybs\attendance_dashboard\tests\presentation\grouping\test_weekly_grouping_strategy.py
+============================================================
+
+# tests/presentation/grouping/test_weekly_grouping_strategy.py
+
+from datetime import date
+
+from src.presentation.grouping.weekly_grouping_strategy import (
+    WeeklyGroupingStrategy,
+)
+
+
+def test_sunday_starts_a_new_week() -> None:
+    strategy = WeeklyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 1),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 1, 7)
+
+
+def test_midweek_date_belongs_to_previous_sunday_week() -> None:
+    strategy = WeeklyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 4),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 1, 7)
+
+
+def test_saturday_ends_the_week() -> None:
+    strategy = WeeklyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2023, 1, 7),
+    )
+
+    assert boundary.start_date == date(2023, 1, 1)
+    assert boundary.end_date == date(2023, 1, 7)
+
+
+def test_year_boundary_is_handled_correctly() -> None:
+    strategy = WeeklyGroupingStrategy()
+
+    boundary = strategy.boundary_for(
+        date(2022, 12, 31),
+    )
+
+    assert boundary.start_date == date(2022, 12, 25)
+    assert boundary.end_date == date(2022, 12, 31)

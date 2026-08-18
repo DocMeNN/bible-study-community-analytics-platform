@@ -74,7 +74,6 @@ class SessionCollection:
             )
 
         for session in self.sessions:
-
             if not isinstance(
                 session,
                 Session,
@@ -148,10 +147,7 @@ class SessionCollection:
     def session_dates(self) -> tuple[date, ...]:
         """Return session dates in chronological order."""
 
-        return tuple(
-            session.session_date
-            for session in self.sessions
-        )
+        return tuple(session.session_date for session in self.sessions)
 
     @property
     def first_date(self) -> date | None:
@@ -184,7 +180,6 @@ class SessionCollection:
         """
 
         for session in self.sessions:
-
             if session.session_date == session_date:
                 return session
 
@@ -198,9 +193,12 @@ class SessionCollection:
         Return True if a session exists on the supplied date.
         """
 
-        return self.get_session(
-            session_date,
-        ) is not None
+        return (
+            self.get_session(
+                session_date,
+            )
+            is not None
+        )
 
     # =========================================================================
     # Iteration
@@ -239,10 +237,7 @@ class SessionCollection:
             "session_dates": self.session_dates,
             "first_date": self.first_date,
             "last_date": self.last_date,
-            "sessions": tuple(
-                session.to_dict()
-                for session in self.sessions
-            ),
+            "sessions": tuple(session.to_dict() for session in self.sessions),
         }
 
     # =========================================================================

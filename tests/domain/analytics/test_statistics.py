@@ -141,10 +141,7 @@ def test_average_attendance_supports_generator_input() -> None:
         ),
     )
 
-    summary_generator = (
-        summary
-        for summary in summaries
-    )
+    summary_generator = (summary for summary in summaries)
 
     assert average_attendance(summary_generator) == 30.0
 

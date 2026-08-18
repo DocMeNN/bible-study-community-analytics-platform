@@ -1,4 +1,4 @@
-# src/presentation/components/metric_cards.py
+# src/presentation/components/common/metric_cards.py
 
 """
 Metric Card Components
@@ -6,30 +6,16 @@ Metric Card Components
 Purpose
 -------
 Reusable Streamlit metric card components for displaying
-key performance indicators (KPIs) throughout the application.
-
-Responsibilities
-----------------
-- Render a single metric card.
-- Render a row of metric cards.
-- Provide a consistent metric appearance.
-- Remain presentation-only.
+key performance indicators throughout the application.
 
 Architectural Rules
 -------------------
+- Presentation only.
 - No business logic.
 - No analytics.
 - No Session objects.
 - No Application Services.
 - No Infrastructure access.
-
-Author
-------
-OYBS Attendance Dashboard
-
-Created
--------
-July 2026
 """
 
 from __future__ import annotations
@@ -51,12 +37,11 @@ import streamlit as st
 MetricValue = int | float | str
 
 Metric = tuple[
-    str,  # Label
-    MetricValue,  # Value
-    str | None,  # Delta
-    str | None,  # Help text
+    str,
+    MetricValue,
+    str | None,
+    str | None,
 ]
-
 
 # ============================================================================
 # Single Metric
@@ -72,20 +57,6 @@ def render_metric(
 ) -> None:
     """
     Render a single Streamlit metric card.
-
-    Parameters
-    ----------
-    label:
-        Metric title.
-
-    value:
-        Metric value.
-
-    delta:
-        Optional delta displayed beneath the value.
-
-    help_text:
-        Optional tooltip.
     """
 
     st.metric(
@@ -106,20 +77,24 @@ def render_metric_row(
 ) -> None:
     """
     Render multiple metrics in a responsive row.
-
-    Parameters
-    ----------
-    metrics:
-        Sequence of metric definitions.
     """
 
     if not metrics:
-        st.info("No metrics available.")
+        st.info(
+            "No metrics available.",
+        )
+
         return
 
-    columns = st.columns(len(metrics))
+    columns = st.columns(
+        len(metrics),
+    )
 
-    for column, metric in zip(columns, metrics, strict=False):
+    for column, metric in zip(
+        columns,
+        metrics,
+        strict=False,
+    ):
         label, value, delta, help_text = metric
 
         with column:
@@ -142,20 +117,16 @@ def render_section_header(
 ) -> None:
     """
     Render a section heading above a metric group.
-
-    Parameters
-    ----------
-    title:
-        Section title.
-
-    description:
-        Optional descriptive text.
     """
 
-    st.subheader(title)
+    st.subheader(
+        title,
+    )
 
     if description:
-        st.caption(description)
+        st.caption(
+            description,
+        )
 
 
 # ============================================================================
@@ -168,11 +139,8 @@ def render_empty_metrics(
 ) -> None:
     """
     Display an empty metric state.
-
-    Parameters
-    ----------
-    message:
-        Message displayed to the user.
     """
 
-    st.info(message)
+    st.info(
+        message,
+    )

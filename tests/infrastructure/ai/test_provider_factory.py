@@ -29,9 +29,7 @@ def test_factory_creates_ollama_provider() -> None:
 def test_factory_creates_openai_provider() -> None:
     config = _config(AIProvider.OPENAI)
 
-    with patch(
-        "src.infrastructure.ai.providers.openai_provider.OpenAIClient"
-    ):
+    with patch("src.infrastructure.ai.providers.openai_provider.OpenAIClient"):
         provider = AIProviderFactory.create(config)
 
     assert provider.__class__.__name__ == "OpenAIProvider"
@@ -40,9 +38,7 @@ def test_factory_creates_openai_provider() -> None:
 def test_factory_creates_gemini_provider() -> None:
     config = _config(AIProvider.GEMINI)
 
-    with patch(
-        "src.infrastructure.ai.providers.gemini_provider.GeminiClient"
-    ):
+    with patch("src.infrastructure.ai.providers.gemini_provider.GeminiClient"):
         provider = AIProviderFactory.create(config)
 
     assert provider.__class__.__name__ == "GeminiProvider"

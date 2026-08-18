@@ -1,0 +1,392 @@
+﻿============================================================
+CP-018 — MULTI-SESSION ANALYTICS PRESENTATION INTEGRATION
+============================================================
+BATCH: cp018_03_presentation_grouping.txt
+============================================================
+
+
+============================================================
+FILE: src\presentation\grouping\session_grouping_service.py
+============================================================
+
+# src/presentation/grouping/session_grouping_service.py
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+from src.domain.models.session_collection import SessionCollection
+from src.presentation.models.session_group import SessionGroup
+
+from .grouping_strategy import GroupingStrategy
+from .grouping_types import GroupingPeriod
+
+
+class SessionGroupingService:
+    """
+    Presentation-layer service for grouping Daily Sessions.
+    """
+
+    def __init__(
+        self,
+        strategy: GroupingStrategy,
+        period: GroupingPeriod,
+    ) -> None:
+        if not isinstance(
+            period,
+            GroupingPeriod,
+        ):
+            raise TypeError(
+                "period must be a GroupingPeriod.",
+            )
+
+        self._strategy = strategy
+        self._period = period
+
+    @property
+    def period(self) -> GroupingPeriod:
+        """Return the active grouping period."""
+
+        return self._period
+
+    def group(
+        self,
+        session_collection: SessionCollection,
+    ) -> tuple[SessionGroup, ...]:
+        """
+        Group sessions without modifying the source collection.
+        """
+
+        grouped_sessions = defaultdict(list)
+
+        for session in session_collection:
+
+            boundary = self._strategy.boundary_for(
+                session.session_date,
+            )
+
+            key = (
+                boundary.start_date,
+                boundary.end_date,
+            )
+
+            grouped_sessions[key].append(
+                session,
+            )
+
+        return tuple(
+            SessionGroup(
+                start_date=start_date,
+                end_date=end_date,
+                sessions=tuple(sessions),
+            )
+            for (
+                start_date,
+                end_date,
+            ), sessions in sorted(
+                grouped_sessions.items(),
+            )
+        )
+
+
+__all__ = [
+    "SessionGroupingService",
+]
+
+
+============================================================
+FILE: src\presentation\grouping\grouping_strategy.py
+============================================================
+
+# src/presentation/grouping/grouping_strategy.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from typing import Protocol
+
+
+@dataclass(frozen=True, slots=True)
+class GroupBoundary:
+    """
+    Immutable presentation grouping boundary.
+    """
+
+    start_date: date
+    end_date: date
+
+    def __post_init__(self) -> None:
+        """Validate the grouping boundary."""
+
+        if self.end_date < self.start_date:
+            raise ValueError(
+                "end_date cannot be earlier than start_date.",
+            )
+
+
+class GroupingStrategy(Protocol):
+    """
+    Contract for Presentation-layer grouping strategies.
+    """
+
+    def boundary_for(
+        self,
+        session_date: date,
+    ) -> GroupBoundary:
+        """
+        Return the grouping boundary for a session date.
+        """
+        ...
+
+
+__all__ = [
+    "GroupBoundary",
+    "GroupingStrategy",
+]
+
+
+============================================================
+FILE: src\presentation\grouping\grouping_configuration.py
+============================================================
+
+# src/presentation/grouping/grouping_configuration.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from .grouping_types import GroupingPeriod
+
+
+@dataclass(frozen=True, slots=True)
+class GroupingConfiguration:
+    """
+    Presentation-layer configuration for session grouping.
+    """
+
+    period: GroupingPeriod = GroupingPeriod.WEEK
+    week_start_day: int = 6
+
+    def __post_init__(self) -> None:
+        """Validate grouping configuration."""
+
+        if not isinstance(
+            self.period,
+            GroupingPeriod,
+        ):
+            raise TypeError(
+                "period must be a GroupingPeriod.",
+            )
+
+        if not 0 <= self.week_start_day <= 6:
+            raise ValueError(
+                "week_start_day must be between 0 and 6.",
+            )
+
+    @classmethod
+    def daily(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return daily grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.DAY,
+        )
+
+    @classmethod
+    def weekly(
+        cls,
+        week_start_day: int = 6,
+    ) -> GroupingConfiguration:
+        """Return weekly grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.WEEK,
+            week_start_day=week_start_day,
+        )
+
+    @classmethod
+    def monthly(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return monthly grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.MONTH,
+        )
+
+    @classmethod
+    def first_half(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return first-half-of-year grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.FIRST_HALF,
+        )
+
+    @classmethod
+    def second_half(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return second-half-of-year grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.SECOND_HALF,
+        )
+
+    @classmethod
+    def yearly(
+        cls,
+    ) -> GroupingConfiguration:
+        """Return yearly grouping configuration."""
+
+        return cls(
+            period=GroupingPeriod.YEAR,
+        )
+
+
+__all__ = [
+    "GroupingConfiguration",
+]
+
+
+============================================================
+FILE: src\presentation\grouping\grouping_types.py
+============================================================
+
+# src/presentation/grouping/grouping_types.py
+
+from __future__ import annotations
+
+from enum import Enum
+
+
+class GroupingPeriod(str, Enum):
+    """Supported Presentation-layer grouping periods."""
+
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    FIRST_HALF = "first_half"
+    SECOND_HALF = "second_half"
+    YEAR = "year"
+
+
+__all__ = [
+    "GroupingPeriod",
+]
+
+
+============================================================
+FILE: src\presentation\models\session_group.py
+============================================================
+
+# src/presentation/models/session_group.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from src.domain.models.session import Session
+
+
+@dataclass(frozen=True, slots=True)
+class SessionGroup:
+    """
+    Immutable Presentation-layer grouping of Daily Sessions.
+    """
+
+    start_date: date
+    end_date: date
+    sessions: tuple[Session, ...]
+
+    def __post_init__(self) -> None:
+        """Validate and normalize the SessionGroup."""
+
+        if self.end_date < self.start_date:
+            raise ValueError(
+                "end_date cannot be earlier than start_date.",
+            )
+
+        for session in self.sessions:
+
+            if not isinstance(
+                session,
+                Session,
+            ):
+                raise TypeError(
+                    "sessions must contain only Session instances.",
+                )
+
+        ordered_sessions = tuple(
+            sorted(
+                self.sessions,
+                key=lambda session: session.session_date,
+            )
+        )
+
+        object.__setattr__(
+            self,
+            "sessions",
+            ordered_sessions,
+        )
+
+    @property
+    def count(self) -> int:
+        """Return the number of Daily Sessions in the group."""
+
+        return len(self.sessions)
+
+    @property
+    def is_empty(self) -> bool:
+        """Return True when the group contains no sessions."""
+
+        return not self.sessions
+
+    @property
+    def session_dates(self) -> tuple[date, ...]:
+        """Return contained Daily Session dates."""
+
+        return tuple(session.session_date for session in self.sessions)
+
+    def get_session(
+        self,
+        session_date: date,
+    ) -> Session | None:
+        """Return the Daily Session for a date."""
+
+        for session in self.sessions:
+
+            if session.session_date == session_date:
+                return session
+
+        return None
+
+    def __iter__(self):
+        """Iterate through Daily Sessions chronologically."""
+
+        return iter(
+            self.sessions,
+        )
+
+    def __len__(self) -> int:
+        """Return the number of Daily Sessions."""
+
+        return self.count
+
+    def __getitem__(
+        self,
+        index: int,
+    ) -> Session:
+        """Return a Daily Session by index."""
+
+        return self.sessions[index]
+
+
+__all__ = [
+    "SessionGroup",
+]
+

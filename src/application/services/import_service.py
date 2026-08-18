@@ -141,13 +141,11 @@ class ImportService:
         """
 
         try:
-
             return parse_whatsapp_chat(
                 raw_text,
             )
 
         except InvalidExportFormatError:
-
             return parse_chat(
                 raw_text,
             )

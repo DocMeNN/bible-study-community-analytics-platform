@@ -1,4 +1,4 @@
-﻿# src/application/dto/multi_session_analytics_result.py
+# src/application/dto/multi_session_analytics_result.py
 
 """
 Multi-Session Analytics Result DTO

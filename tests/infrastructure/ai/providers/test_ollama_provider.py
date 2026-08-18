@@ -32,9 +32,7 @@ def test_ollama_provider_generates_response() -> None:
         }
     )
 
-    response = provider.generate(
-        AIRequest(prompt="Hello")
-    )
+    response = provider.generate(AIRequest(prompt="Hello"))
 
     assert response.content == "Generated response"
     assert response.provider == "ollama"

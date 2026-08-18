@@ -139,10 +139,7 @@ class TestImportServiceConstruction:
             multi_session_builder=multi_session_builder,
         )
 
-        assert (
-            service.multi_session_builder
-            is multi_session_builder
-        )
+        assert service.multi_session_builder is multi_session_builder
 
 
 # ============================================================================

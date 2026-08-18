@@ -213,11 +213,14 @@ def test_done_count_by_period(
     events: tuple[DoneEvent, ...],
 ) -> None:
     """Done acknowledgements should be counted within an inclusive period."""
-    assert done_count_by_period(
-        events,
-        date(2026, 7, 22),
-        date(2026, 7, 22),
-    ) == 2
+    assert (
+        done_count_by_period(
+            events,
+            date(2026, 7, 22),
+            date(2026, 7, 22),
+        )
+        == 2
+    )
 
 
 def test_done_count_by_period_rejects_invalid_range(

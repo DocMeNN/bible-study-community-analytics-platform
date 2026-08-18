@@ -150,10 +150,7 @@ class TestExecution:
     ) -> None:
         """execute forwards messages to the AI service."""
 
-        messages = (
-            "Alice: I learned something today.\n"
-            "Bob: The discussion was helpful."
-        )
+        messages = "Alice: I learned something today.\nBob: The discussion was helpful."
 
         ai_service.process.return_value = "Generated message insights"
 

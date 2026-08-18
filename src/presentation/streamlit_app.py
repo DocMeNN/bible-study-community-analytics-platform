@@ -12,6 +12,7 @@ Responsibilities
 - Configure the Streamlit application.
 - Initialize the Presentation Context.
 - Render the application header.
+- Render the unified session navigation control.
 - Route navigation to the selected page.
 - Handle unexpected application-level exceptions.
 
@@ -22,6 +23,7 @@ This module intentionally remains thin.
 It must:
 - Configure the Presentation layer.
 - Delegate navigation.
+- Delegate session selection.
 - Delegate page rendering.
 
 It must not:
@@ -31,23 +33,40 @@ It must not:
 - Parse data.
 - Build Session aggregates.
 
+Unified Session Presentation
+----------------------------
+The active SessionCollection is loaded once into the Presentation Context.
+
+The unified session selector is rendered once at the application level.
+
+Pages consume the currently selected Session through the
+Presentation Context.
+
+Presentation flow:
+
+SessionCollection
+        ↓
+Presentation Scope
+        ↓
+Session Group
+        ↓
+Daily Session
+        ↓
+Selected Session
+        ↓
+Selected Page
+        ↓
+Analytics
+
 Dependency Flow
 ---------------
 Presentation
-    ↓
+        ↓
 Application
-    ↓
+        ↓
 Domain
-    ↑
+        ↑
 Infrastructure
-
-Author
-------
-OYBS Attendance Dashboard
-
-Created
--------
-July 2026
 """
 
 from __future__ import annotations
@@ -57,17 +76,17 @@ from __future__ import annotations
 # ============================================================================
 import traceback
 
-import streamlit as st
-
 # ============================================================================
 # Third-Party Imports
 # ============================================================================
+import streamlit as st
 from dotenv import load_dotenv
 
 # ============================================================================
 # Local Imports
 # ============================================================================
 from src.presentation import context, navigation, theme
+from src.presentation.components.common import session_selector
 
 # ============================================================================
 # Application Entry Point
@@ -77,14 +96,6 @@ from src.presentation import context, navigation, theme
 def main() -> None:
     """
     Launch the Streamlit application.
-
-    Responsibilities
-    ----------------
-    1. Configure Streamlit.
-    2. Initialize presentation context.
-    3. Render application header.
-    4. Determine selected page.
-    5. Delegate rendering.
     """
 
     load_dotenv()
@@ -94,6 +105,11 @@ def main() -> None:
     context.initialize()
 
     theme.render_application_header()
+
+    if context.has_session_collection():
+        session_selector.render()
+
+        st.divider()
 
     page_renderer = navigation.get_selected_page()
 
@@ -108,8 +124,6 @@ def main() -> None:
 def run() -> None:
     """
     Execute the application with error handling.
-
-    Used when this module is launched directly.
     """
 
     try:
@@ -131,6 +145,7 @@ def run() -> None:
 # ============================================================================
 # Bootstrap
 # ============================================================================
+
 
 if __name__ == "__main__":
     run()

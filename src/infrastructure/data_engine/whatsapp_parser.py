@@ -255,7 +255,6 @@ def parse_whatsapp_chat(
     records: list[RawMessageRecord] = []
 
     for line_number, message in logical_messages:
-
         record = _parse_message(
             message=message,
             line_number=line_number,
@@ -301,7 +300,6 @@ def _build_logical_messages(
         raw_text.splitlines(),
         start=1,
     ):
-
         line = raw_line.rstrip()
 
         #
@@ -314,9 +312,7 @@ def _build_logical_messages(
         # New WhatsApp record detected.
         #
         if _starts_new_message(line):
-
             if current_lines:
-
                 logical_messages.append(
                     (
                         current_line_number or line_number,
@@ -333,7 +329,6 @@ def _build_logical_messages(
         # Ignore malformed preamble before the first record.
         #
         if not current_lines:
-
             logger.debug(
                 "Ignoring non-record line %d.",
                 line_number,
@@ -347,7 +342,6 @@ def _build_logical_messages(
         current_lines.append(line)
 
     if current_lines:
-
         logical_messages.append(
             (
                 current_line_number or 1,
@@ -438,7 +432,6 @@ def _parse_message(
     match = ANDROID_MESSAGE_PATTERN.match(message)
 
     if match is not None:
-
         return _build_record(
             match=match,
             line_number=line_number,
@@ -451,7 +444,6 @@ def _parse_message(
     match = IPHONE_MESSAGE_PATTERN.match(message)
 
     if match is not None:
-
         return _build_record(
             match=match,
             line_number=line_number,
@@ -464,11 +456,9 @@ def _parse_message(
     match = ANDROID_SYSTEM_PATTERN.match(message)
 
     if match is not None:
-
         if _is_system_message(
             match.group("message"),
         ):
-
             logger.debug(
                 "Ignoring Android system event on line %d.",
                 line_number,
@@ -483,11 +473,9 @@ def _parse_message(
     match = IPHONE_SYSTEM_PATTERN.match(message)
 
     if match is not None:
-
         if _is_system_message(
             match.group("message"),
         ):
-
             logger.debug(
                 "Ignoring iPhone system event on line %d.",
                 line_number,
@@ -621,7 +609,6 @@ def _parse_timestamp(
     )
 
     for fmt in formats:
-
         try:
             return datetime.strptime(
                 timestamp,
@@ -632,7 +619,7 @@ def _parse_timestamp(
             continue
 
     raise ParsingError(
-        (f"Unable to parse timestamp " f"'{timestamp}' " f"on line {line_number}.")
+        (f"Unable to parse timestamp '{timestamp}' on line {line_number}.")
     )
 
 

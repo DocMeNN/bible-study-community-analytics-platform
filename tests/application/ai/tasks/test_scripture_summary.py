@@ -167,10 +167,7 @@ class TestExecution:
     ) -> None:
         """execute preserves multiline scripture input."""
 
-        scripture = (
-            "John 3:16\n"
-            "For God so loved the world..."
-        )
+        scripture = "John 3:16\nFor God so loved the world..."
 
         ai_service.process.return_value = "Generated scripture summary"
 

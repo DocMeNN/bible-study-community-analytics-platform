@@ -65,7 +65,7 @@ def load_chat(filepath: str | Path) -> str:
 
     if path.suffix.lower() != ".txt":
         raise InvalidExportFormatError(
-            f"Unsupported file type '{path.suffix}'. " "Expected a '.txt' export."
+            f"Unsupported file type '{path.suffix}'. Expected a '.txt' export."
         )
 
     try:

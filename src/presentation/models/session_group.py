@@ -1,4 +1,4 @@
-﻿# src/presentation/models/session_group.py
+# src/presentation/models/session_group.py
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ class SessionGroup:
             )
 
         for session in self.sessions:
-
             if not isinstance(
                 session,
                 Session,
@@ -65,10 +64,7 @@ class SessionGroup:
     def session_dates(self) -> tuple[date, ...]:
         """Return contained Daily Session dates."""
 
-        return tuple(
-            session.session_date
-            for session in self.sessions
-        )
+        return tuple(session.session_date for session in self.sessions)
 
     def get_session(
         self,
@@ -77,7 +73,6 @@ class SessionGroup:
         """Return the Daily Session for a date."""
 
         for session in self.sessions:
-
             if session.session_date == session_date:
                 return session
 

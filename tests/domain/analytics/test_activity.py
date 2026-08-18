@@ -99,10 +99,7 @@ def test_get_events_by_type_returns_matching_events(
     )
 
     assert len(result) == 2
-    assert all(
-        event.activity_type is ActivityType.INSIGHT
-        for event in result
-    )
+    assert all(event.activity_type is ActivityType.INSIGHT for event in result)
 
 
 def test_count_activity_events(
@@ -141,15 +138,9 @@ def test_first_and_last_activity_events(
     events: tuple[ActivityEvent, ...],
 ) -> None:
     """First and last activities should be identified chronologically."""
-    assert (
-        first_activity_event(events).activity_type
-        is ActivityType.SCRIPTURE_READING
-    )
+    assert first_activity_event(events).activity_type is ActivityType.SCRIPTURE_READING
 
-    assert (
-        last_activity_event(events).activity_type
-        is ActivityType.INSIGHT
-    )
+    assert last_activity_event(events).activity_type is ActivityType.INSIGHT
 
 
 def test_empty_events_return_none() -> None:
@@ -182,10 +173,13 @@ def test_missing_activity_is_not_detected(
     events: tuple[ActivityEvent, ...],
 ) -> None:
     """Missing activity types should not be detected."""
-    assert has_activity(
-        events,
-        ActivityType.PRAYER_SESSION,
-    ) is False
+    assert (
+        has_activity(
+            events,
+            ActivityType.PRAYER_SESSION,
+        )
+        is False
+    )
 
 
 def test_activity_names_preserve_chronological_order(
@@ -226,10 +220,7 @@ def test_first_and_last_activity_types(
     events: tuple[ActivityEvent, ...],
 ) -> None:
     """First and last activity types should be identified."""
-    assert (
-        first_activity_type(events)
-        is ActivityType.SCRIPTURE_READING
-    )
+    assert first_activity_type(events) is ActivityType.SCRIPTURE_READING
 
     assert last_activity_type(events) is ActivityType.INSIGHT
 
@@ -256,13 +247,9 @@ def test_activity_summary(
         ActivityType.INSIGHT,
     )
 
-    assert summary["first_activity"].activity_type is (
-        ActivityType.SCRIPTURE_READING
-    )
+    assert summary["first_activity"].activity_type is (ActivityType.SCRIPTURE_READING)
 
-    assert summary["last_activity"].activity_type is (
-        ActivityType.INSIGHT
-    )
+    assert summary["last_activity"].activity_type is (ActivityType.INSIGHT)
 
 
 def test_generator_input_is_supported() -> None:

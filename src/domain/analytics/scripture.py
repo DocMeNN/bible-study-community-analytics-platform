@@ -187,4 +187,3 @@ def scripture_summary(
         "last_scripture_event": last_scripture_event(events),
         "scripture_dates": scripture_dates(events),
     }
-

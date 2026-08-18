@@ -1,4 +1,4 @@
-﻿# tests/presentation/grouping/test_session_group.py
+# tests/presentation/grouping/test_session_group.py
 
 from datetime import date
 
@@ -39,6 +39,9 @@ def test_session_group_returns_session_by_date() -> None:
         sessions=(session,),
     )
 
-    assert group.get_session(
-        date(2023, 1, 3),
-    ) is session
+    assert (
+        group.get_session(
+            date(2023, 1, 3),
+        )
+        is session
+    )

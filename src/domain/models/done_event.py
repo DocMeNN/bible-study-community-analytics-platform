@@ -140,4 +140,4 @@ class DoneEvent:
     def __str__(self) -> str:
         """Return a readable representation."""
 
-        return f"DoneEvent(" f"attendee='{self.attendee}', " f"time='{self.timestamp}')"
+        return f"DoneEvent(attendee='{self.attendee}', time='{self.timestamp}')"

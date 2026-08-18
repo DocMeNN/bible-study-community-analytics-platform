@@ -100,10 +100,7 @@ def test_get_general_insights(
     result = get_general_insights(insights)
 
     assert len(result) == 2
-    assert all(
-        insight.session_date is None
-        for insight in result
-    )
+    assert all(insight.session_date is None for insight in result)
 
 
 def test_classification_helpers(
@@ -223,10 +220,7 @@ def test_insight_summary(
     assert summary["informational_count"] == 1
     assert summary["session_specific_count"] == 2
     assert summary["general_count"] == 2
-    assert (
-        summary["highest_priority"].severity
-        is InsightSeverity.CRITICAL
-    )
+    assert summary["highest_priority"].severity is InsightSeverity.CRITICAL
 
 
 def test_empty_insights_return_empty_results() -> None:
@@ -255,9 +249,6 @@ def test_generator_input_is_supported() -> None:
         ),
     )
 
-    generator = (
-        insight
-        for insight in insights
-    )
+    generator = (insight for insight in insights)
 
     assert count_insights(generator) == 2

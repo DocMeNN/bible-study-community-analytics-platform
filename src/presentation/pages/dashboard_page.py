@@ -9,9 +9,7 @@ Displays the primary dashboard for a selected study session.
 
 Responsibilities
 ----------------
-- Coordinate dashboard presentation workflows.
-- Select a Session from the active SessionCollection.
-- Persist the selected Session through the shared Session Selector.
+- Consume the globally selected Session through Presentation Context.
 - Display dashboard metrics.
 - Display attendance analytics.
 - Display activity analytics.
@@ -26,6 +24,7 @@ Architectural Rules
 - No business logic.
 - No analytics calculations.
 - No infrastructure access.
+- Do not render the unified session selector locally.
 """
 
 from __future__ import annotations
@@ -49,7 +48,6 @@ from src.presentation.components.ai import ministry_ai_panel
 from src.presentation.components.common import (
     charts,
     metric_cards,
-    session_selector,
     tables,
 )
 from src.presentation.utils import formatters
@@ -70,17 +68,18 @@ def render() -> None:
 
     if not context.has_session_collection():
         st.info(
-            "No sessions loaded.\n\n"
-            "Please import a WhatsApp chat from the Home page.",
+            "No sessions loaded.\n\nPlease import a WhatsApp chat from the Home page.",
         )
+
         return
 
-    session = session_selector.render()
+    session = context.current_session()
 
     if session is None:
         st.error(
             "Unable to retrieve the selected session.",
         )
+
         return
 
     viewmodel = context.dashboard_viewmodel()
@@ -129,7 +128,6 @@ def render() -> None:
     # ========================================================================
 
     try:
-
         metric_cards.render_section_header(
             "AI Ministry Intelligence",
             "Generate an AI-powered summary of the current meeting session.",
@@ -152,7 +150,7 @@ def render() -> None:
         ministry_ai_panel.render(
             title="Session Summary",
             button_label="✨ Generate Session Summary",
-            callback=context.ai_controller().generate_session_summary,
+            callback=(context.ai_controller().generate_session_summary),
             callback_kwargs={
                 "session_information": session_information,
                 "attendance_summary": attendance_summary,
@@ -160,7 +158,7 @@ def render() -> None:
             },
             result_key="dashboard_session_summary",
             button_key="dashboard_generate_summary",
-            help_text="Generate an AI summary of this ministry session.",
+            help_text=("Generate an AI summary of this ministry session."),
             empty_message=(
                 "Click 'Generate Session Summary' to create "
                 "an AI-powered overview of this meeting."
@@ -168,7 +166,6 @@ def render() -> None:
         )
 
     except Exception as exc:
-
         st.error(
             "Unable to load the AI Ministry Intelligence panel.",
         )
@@ -280,7 +277,9 @@ def render() -> None:
     # Footer
     # ========================================================================
 
-    left_column, right_column = st.columns([3, 1])
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
 
     with left_column:
         st.caption(

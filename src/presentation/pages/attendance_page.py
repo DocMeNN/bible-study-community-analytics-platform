@@ -10,7 +10,7 @@ Displays attendance analytics for the selected ministry session.
 Responsibilities
 ----------------
 - Coordinate the AttendanceViewModel.
-- Consume the selected Session through the shared Session Selector.
+- Consume the globally selected Session through Presentation Context.
 - Display attendance session summary.
 - Coordinate attendance presentation components.
 - Display the attendance page footer.
@@ -22,6 +22,15 @@ Architectural Rules
 - No analytics calculations.
 - No direct Application Service orchestration.
 - Consume Application results through the Presentation ViewModel.
+- Do not render the session selector locally.
+
+Session Selection
+-----------------
+The unified session selector is rendered once by the application shell.
+
+This page consumes the selected Session through:
+
+    context.current_session()
 """
 
 from __future__ import annotations
@@ -41,7 +50,6 @@ from src.presentation.components.attendance import (
 )
 from src.presentation.components.common import (
     metric_cards,
-    session_selector,
     tables,
 )
 from src.presentation.utils import formatters
@@ -62,24 +70,25 @@ def render() -> None:
 
     if not context.has_session_collection():
         st.info(
-            "No sessions loaded.\n\n"
-            "Please load a WhatsApp chat from the Home page.",
+            "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
         )
+
         return
 
-    session = session_selector.render()
+    session = context.current_session()
 
     if session is None:
         st.info(
             "No session is currently selected.",
         )
+
         return
 
     attendance_viewmodel = context.attendance_viewmodel()
 
     attendance = attendance_viewmodel.attendance_data(
         session=session,
-        expected_attendees=context.expected_attendees(),
+        expected_attendees=(context.expected_attendees()),
     )
 
     # =========================================================================

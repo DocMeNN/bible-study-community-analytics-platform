@@ -101,10 +101,13 @@ def test_compare_attendance_returns_percentage_point_difference(
 ) -> None:
     """Attendance comparison should return percentage-point difference."""
 
-    assert compare_attendance(
-        first_summary,
-        second_summary,
-    ) == 30.0
+    assert (
+        compare_attendance(
+            first_summary,
+            second_summary,
+        )
+        == 30.0
+    )
 
 
 def test_compare_attendance_returns_negative_difference_on_decline(
@@ -117,10 +120,13 @@ def test_compare_attendance_returns_negative_difference_on_decline(
         present_count=3,
     )
 
-    assert compare_attendance(
-        first_summary,
-        lower_summary,
-    ) == -20.0
+    assert (
+        compare_attendance(
+            first_summary,
+            lower_summary,
+        )
+        == -20.0
+    )
 
 
 def test_compare_attendance_returns_zero_when_unchanged(
@@ -133,10 +139,13 @@ def test_compare_attendance_returns_zero_when_unchanged(
         present_count=5,
     )
 
-    assert compare_attendance(
-        first_summary,
-        same_summary,
-    ) == 0.0
+    assert (
+        compare_attendance(
+            first_summary,
+            same_summary,
+        )
+        == 0.0
+    )
 
 
 # ============================================================================
@@ -248,10 +257,13 @@ def test_compare_expected_attendance(
         expected_attendees=15,
     )
 
-    assert compare_expected_attendance(
-        first_summary,
-        second_summary,
-    ) == 5
+    assert (
+        compare_expected_attendance(
+            first_summary,
+            second_summary,
+        )
+        == 5
+    )
 
 
 # ============================================================================
@@ -265,10 +277,13 @@ def test_compare_present_count(
 ) -> None:
     """Present participant difference should be returned."""
 
-    assert compare_present_count(
-        first_summary,
-        second_summary,
-    ) == 3
+    assert (
+        compare_present_count(
+            first_summary,
+            second_summary,
+        )
+        == 3
+    )
 
 
 # ============================================================================

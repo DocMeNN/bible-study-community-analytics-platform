@@ -99,9 +99,7 @@ class ReportViewModel:
         """
 
         self._report_service = (
-            report_service
-            if report_service is not None
-            else ReportService()
+            report_service if report_service is not None else ReportService()
         )
 
     # =========================================================================

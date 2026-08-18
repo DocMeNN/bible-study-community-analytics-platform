@@ -215,7 +215,6 @@ class Session:
         attendees: list[str] = []
 
         for event in self.attendance_events:
-
             if event.is_absent:
                 continue
 
@@ -380,7 +379,6 @@ class Session:
         attendees: list[str] = []
 
         for event in self.done_events:
-
             key = event.attendee.casefold()
 
             if key not in seen:

@@ -21,11 +21,7 @@ def test_parse_chat_parses_valid_record() -> None:
 
 
 def test_parse_chat_skips_blank_lines() -> None:
-    raw_text = (
-        "\n"
-        "2026-01-01 10:00:00\tJohn\tHello\n"
-        "\n"
-    )
+    raw_text = "\n2026-01-01 10:00:00\tJohn\tHello\n\n"
 
     records = parse_chat(raw_text)
 

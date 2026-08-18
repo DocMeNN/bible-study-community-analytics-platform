@@ -83,9 +83,7 @@ class ActivityService:
         """
 
         self._session_builder = (
-            session_builder
-            if session_builder is not None
-            else SessionBuilder()
+            session_builder if session_builder is not None else SessionBuilder()
         )
 
     # =========================================================================
@@ -258,10 +256,7 @@ class ActivityService:
         Return the official representation.
         """
 
-        return (
-            f"{self.__class__.__name__}"
-            f"(builder={self.builder.name})"
-        )
+        return f"{self.__class__.__name__}(builder={self.builder.name})"
 
     def __str__(self) -> str:
         """

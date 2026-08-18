@@ -80,11 +80,8 @@ def render(
     )
 
     if clicked:
-
         try:
-
             with ai_loading.render():
-
                 # ==========================================================
                 # DIAGNOSTIC
                 # ==========================================================
@@ -120,7 +117,6 @@ def render(
                 st.session_state[result_key] = result
 
         except Exception as exc:
-
             st.error("🔍 AI Exception Captured")
 
             st.write("### Exception Type")
@@ -156,14 +152,12 @@ def render(
     # =====================================================================
 
     if result:
-
         ai_result.render(
             result=result,
             title="Generated Response",
         )
 
     else:
-
         ai_result.empty(
             message=empty_message,
         )

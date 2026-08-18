@@ -10,7 +10,7 @@ Displays reporting and AI executive reporting for the selected session.
 Responsibilities
 ----------------
 - Coordinate report presentation workflows.
-- Consume the selected Session through the shared Session Selector.
+- Consume the globally selected Session through Presentation Context.
 - Display report metrics.
 - Display session summary.
 - Display AI executive report generation.
@@ -24,6 +24,7 @@ Architectural Rules
 - No analytics calculations.
 - No report generation.
 - No file I/O.
+- Do not render the unified session selector locally.
 """
 
 from __future__ import annotations
@@ -40,7 +41,6 @@ from src.presentation import context
 from src.presentation.components.ai import ministry_ai_panel
 from src.presentation.components.common import (
     metric_cards,
-    session_selector,
     tables,
 )
 from src.presentation.utils import formatters
@@ -61,17 +61,18 @@ def render() -> None:
 
     if not context.has_session_collection():
         st.info(
-            "No sessions loaded.\n\n"
-            "Please load a WhatsApp chat from the Home page.",
+            "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
         )
+
         return
 
-    session = session_selector.render()
+    session = context.current_session()
 
     if session is None:
         st.info(
             "No session is currently selected.",
         )
+
         return
 
     expected_attendees = context.expected_attendees()
@@ -85,9 +86,9 @@ def render() -> None:
 
     summary = report_data["dashboard"]
 
-    # ========================================================================
+    # =========================================================================
     # Report Overview
-    # ========================================================================
+    # =========================================================================
 
     metric_cards.render_section_header(
         "Report Overview",
@@ -102,9 +103,9 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
+    # =========================================================================
     # Session Summary
-    # ========================================================================
+    # =========================================================================
 
     metric_cards.render_section_header(
         "Session Summary",
@@ -119,9 +120,9 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
+    # =========================================================================
     # Session Highlights
-    # ========================================================================
+    # =========================================================================
 
     metric_cards.render_section_header(
         "Session Highlights",
@@ -137,17 +138,17 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
+    # =========================================================================
     # AI Executive Summary
-    # ========================================================================
+    # =========================================================================
 
     ai_viewmodel = context.ai_viewmodel()
 
     report = ai_viewmodel.build_executive_report(
         session=session,
-        dashboard_summary=report_data["dashboard"],
-        attendance=report_data["attendance"],
-        activity=report_data["activity"],
+        dashboard_summary=(report_data["dashboard"]),
+        attendance=(report_data["attendance"]),
+        activity=(report_data["activity"]),
     )
 
     metric_cards.render_section_header(
@@ -158,13 +159,13 @@ def render() -> None:
     ministry_ai_panel.render(
         title="Executive Summary",
         button_label="✨ Generate Executive Summary",
-        callback=context.ai_controller().generate_executive_summary,
+        callback=(context.ai_controller().generate_executive_summary),
         callback_kwargs={
             "report": report,
         },
         result_key="executive_summary",
         button_key="generate_executive_summary",
-        help_text="Generate an executive report from the current session.",
+        help_text=("Generate an executive report from the current session."),
         empty_message=(
             "Click 'Generate Executive Summary' "
             "to create an AI-powered leadership report."
@@ -173,9 +174,9 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
+    # =========================================================================
     # Export
-    # ========================================================================
+    # =========================================================================
 
     metric_cards.render_section_header(
         "Export",
@@ -193,11 +194,13 @@ def render() -> None:
 
     st.divider()
 
-    # ========================================================================
+    # =========================================================================
     # Footer
-    # ========================================================================
+    # =========================================================================
 
-    left_column, right_column = st.columns([3, 1])
+    left_column, right_column = st.columns(
+        [3, 1],
+    )
 
     with left_column:
         st.caption(

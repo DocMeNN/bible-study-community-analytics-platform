@@ -97,12 +97,10 @@ def _validate_record(
         If required fields are missing.
     """
     if not record.sender:
-        raise MalformedRecordError(f"Missing sender on line " f"{record.source_line}.")
+        raise MalformedRecordError(f"Missing sender on line {record.source_line}.")
 
     if record.timestamp is None:
-        raise MalformedRecordError(
-            f"Missing timestamp on line " f"{record.source_line}."
-        )
+        raise MalformedRecordError(f"Missing timestamp on line {record.source_line}.")
 
     return _build_message(record)
 
@@ -133,5 +131,5 @@ def _build_message(
 
     except ValueError as exc:
         raise MalformedRecordError(
-            (f"Failed to create Message from " f"line {record.source_line}: " f"{exc}")
+            (f"Failed to create Message from line {record.source_line}: {exc}")
         ) from exc
