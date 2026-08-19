@@ -1,42 +1,15 @@
-# src/presentation/pages/reports_page.py
-
-"""
+﻿"""
 Reports Page
 
-Purpose
--------
-Displays reporting and AI executive reporting for the selected session.
-
-Responsibilities
-----------------
-- Coordinate report presentation workflows.
-- Consume the globally selected Session through Presentation Context.
-- Display report metrics.
-- Display session summary.
-- Display AI executive report generation.
-- Display export roadmap.
-- Delegate report workflows to ReportViewModel.
-
-Architectural Rules
--------------------
-- Presentation only.
-- No business logic.
-- No analytics calculations.
-- No report generation.
-- No file I/O.
-- Do not render the unified session selector locally.
+Presentation-scope-aware reporting.
 """
 
 from __future__ import annotations
 
-# ============================================================================
-# Third-Party Imports
-# ============================================================================
+from typing import Any, cast
+
 import streamlit as st
 
-# ============================================================================
-# Local Imports
-# ============================================================================
 from src.presentation import context
 from src.presentation.components.ai import ministry_ai_panel
 from src.presentation.components.common import (
@@ -45,15 +18,9 @@ from src.presentation.components.common import (
 )
 from src.presentation.utils import formatters
 
-# ============================================================================
-# Reports Page
-# ============================================================================
-
 
 def render() -> None:
-    """
-    Render the Reports page.
-    """
+    """Render the Reports page for the active Presentation Scope."""
 
     context.initialize()
 
@@ -61,38 +28,77 @@ def render() -> None:
 
     if not context.has_session_collection():
         st.info(
-            "No sessions loaded.\n\nPlease load a WhatsApp chat from the Home page.",
+            "No sessions loaded.\n\n"
+            "Please load a WhatsApp chat from the Home page.",
         )
-
         return
 
-    session = context.current_session()
+    scope = context.ensure_presentation_scope()
 
-    if session is None:
-        st.info(
-            "No session is currently selected.",
+    if scope is None:
+        st.error(
+            "Unable to establish the active Presentation Scope.",
         )
-
         return
 
-    expected_attendees = context.expected_attendees()
+    dashboard_viewmodel = context.dashboard_viewmodel()
 
-    report_viewmodel = context.report_viewmodel()
-
-    report_data = report_viewmodel.report_data(
-        session=session,
-        expected_attendees=expected_attendees,
+    scope_data = dashboard_viewmodel.scope_dashboard_data(
+        sessions=context.scope_sessions(),
+        expected_attendees=context.expected_attendees(),
     )
 
-    summary = report_data["dashboard"]
+    session = scope_data["scope_session"]
 
-    # =========================================================================
+    if session is None:
+        st.error(
+            "Unable to build the active Presentation Scope report.",
+        )
+        return
+
+    summary = cast(
+        dict[str, Any],
+        scope_data["dashboard"],
+    )
+
+    attendance = scope_data["attendance"]
+    activity = scope_data["activity"]
+
+    scope_label = scope.period.value.capitalize()
+
+    # ========================================================================
+    # Presentation Scope
+    # ========================================================================
+
+    metric_cards.render_section_header(
+        "Presentation Scope",
+        (
+            f"{scope_label} scope: "
+            f"{scope.start_date} → {scope.end_date} "
+            f"({scope.session_count} Daily Session(s))."
+        ),
+    )
+
+    st.caption(
+        (
+            f"Active scope: {scope_label} | "
+            f"{scope.start_date} → {scope.end_date} | "
+            f"{scope.session_count} Daily Session(s)"
+        ),
+    )
+
+    st.divider()
+
+    # ========================================================================
     # Report Overview
-    # =========================================================================
+    # ========================================================================
 
     metric_cards.render_section_header(
         "Report Overview",
-        "Summary statistics included in this report.",
+        (
+            f"Aggregated report statistics for the active "
+            f"{scope_label.lower()} scope."
+        ),
     )
 
     metric_cards.render_metric_row(
@@ -103,13 +109,16 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Session Summary
-    # =========================================================================
+    # ========================================================================
+    # Scope Summary
+    # ========================================================================
 
     metric_cards.render_section_header(
-        "Session Summary",
-        "General information for the current meeting.",
+        "Scope Summary",
+        (
+            f"Aggregated information for the active "
+            f"{scope_label.lower()} presentation scope."
+        ),
     )
 
     tables.render_dataframe(
@@ -120,13 +129,16 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # Session Highlights
-    # =========================================================================
+    # ========================================================================
+    # Scope Highlights
+    # ========================================================================
 
     metric_cards.render_section_header(
-        "Session Highlights",
-        "Important milestones from this meeting.",
+        "Scope Highlights",
+        (
+            f"Important milestones from the active "
+            f"{scope_label.lower()} scope."
+        ),
     )
 
     tables.render_table(
@@ -138,65 +150,58 @@ def render() -> None:
 
     st.divider()
 
-    # =========================================================================
-    # AI Executive Summary
-    # =========================================================================
+    # ========================================================================
+    # AI Executive Report
+    # ========================================================================
 
-    ai_viewmodel = context.ai_viewmodel()
+    try:
+        ai_viewmodel = context.ai_viewmodel()
 
-    report = ai_viewmodel.build_executive_report(
-        session=session,
-        dashboard_summary=(report_data["dashboard"]),
-        attendance=(report_data["attendance"]),
-        activity=(report_data["activity"]),
-    )
+        report = ai_viewmodel.build_executive_report(
+            session=session,
+            dashboard_summary=summary,
+            attendance=attendance,
+            activity=activity,
+        )
 
-    metric_cards.render_section_header(
-        "AI Executive Report",
-        "Generate an executive summary for ministry leadership.",
-    )
+        metric_cards.render_section_header(
+            "AI Executive Report",
+            (
+                f"Generate an executive report for the active "
+                f"{scope_label.lower()} presentation scope."
+            ),
+        )
 
-    ministry_ai_panel.render(
-        title="Executive Summary",
-        button_label="✨ Generate Executive Summary",
-        callback=(context.ai_controller().generate_executive_summary),
-        callback_kwargs={
-            "report": report,
-        },
-        result_key="executive_summary",
-        button_key="generate_executive_summary",
-        help_text=("Generate an executive report from the current session."),
-        empty_message=(
-            "Click 'Generate Executive Summary' "
-            "to create an AI-powered leadership report."
-        ),
-    )
+        ministry_ai_panel.render(
+            title=f"{scope_label} Executive Summary",
+            button_label="✨ Generate Executive Summary",
+            callback=context.ai_controller().generate_executive_summary,
+            callback_kwargs={
+                "report": report,
+            },
+            result_key="executive_scope_summary",
+            button_key="generate_executive_scope_summary",
+            help_text=(
+                f"Generate an AI-powered executive report for the "
+                f"active {scope_label.lower()} scope."
+            ),
+            empty_message=(
+                "Click 'Generate Executive Summary' "
+                "to create an AI-powered leadership report."
+            ),
+        )
 
-    st.divider()
-
-    # =========================================================================
-    # Export
-    # =========================================================================
-
-    metric_cards.render_section_header(
-        "Export",
-        "Export functionality planned for the next checkpoint.",
-    )
-
-    st.info(
-        "Planned export formats:\n\n"
-        "• PDF Ministry Report\n"
-        "• Excel Workbook\n"
-        "• CSV Export\n"
-        "• AI Executive Summary\n"
-        "• Printable Ministry Report",
-    )
+    except Exception as exc:
+        st.error(
+            "Unable to load the AI Executive Report.",
+        )
+        st.exception(exc)
 
     st.divider()
 
-    # =========================================================================
+    # ========================================================================
     # Footer
-    # =========================================================================
+    # ========================================================================
 
     left_column, right_column = st.columns(
         [3, 1],
@@ -205,9 +210,13 @@ def render() -> None:
     with left_column:
         st.caption(
             (
-                f"Session Date: {session.session_date} | "
-                f"Attendance: {summary['attendance_count']} | "
-                f"Activities: {summary['activity_count']}"
+                f"Scope: {scope_label} | "
+                f"{scope.start_date} → {scope.end_date} | "
+                f"Daily Sessions: {scope.session_count} | "
+                f"Unique Participants: {session.attendee_count} | "
+                f"Attendance Events: {session.attendance_count} | "
+                f"Done Events: {session.done_count} | "
+                f"Activity Events: {session.activity_count}"
             ),
         )
 
